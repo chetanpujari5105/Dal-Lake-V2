@@ -130,6 +130,7 @@ export const sharedUniforms = {
   uSunDir: { value: new THREE.Vector3(0, 1, 0) },
   uSunColor: { value: new THREE.Color() },
   uPixelScale: { value: 500 },
+  uWind: { value: 1 },
 };
 
 const rrt = (v: number) => (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.432951) + 0.238081);

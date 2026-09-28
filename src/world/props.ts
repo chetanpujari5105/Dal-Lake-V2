@@ -4,10 +4,13 @@ import { Rng } from '../core/math';
 import type { QualitySettings } from '../core/quality';
 import type { HouseboatMaterials } from './houseboat';
 import {
-  BOULEVARD_X, CHAR_CHINAR, GARDEN_PLOTS, GHAT, HARI_PARBAT, lakeSdf, LOTUS_BED, NISHAT,
+  BOULEVARD_X, CHAR_CHINAR, GHAT, HARI_PARBAT, lakeSdf, LOTUS_BED, NISHAT,
   nishatTerraceTop, terrainHeight,
 } from './layout';
-import { addShikara, shikaraMaterial, type ShikaraStyle } from './shikara';
+import type { TextureLibrary } from '../assets/textureLibrary';
+import { buildFloatingGardens } from './gardens';
+import { buildShikaraParts, partsToGroup, transformParts, type Part, type ShikaraMaterials } from './shikaraModel';
+import type { FabricKey } from '../assets/textureLibrary';
 
 export interface TreeSpot {
   x: number;
@@ -27,7 +30,7 @@ export interface PropsResult {
 const vegMaterial = () => new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 const stoneMaterial = () => new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
 
-export function buildProps(q: QualitySettings, mats: HouseboatMaterials): PropsResult {
+export function buildProps(q: QualitySettings, mats: HouseboatMaterials, boatMats: ShikaraMaterials, lib: TextureLibrary): PropsResult {
   const group = new THREE.Group();
   group.name = 'props';
   const lanterns: THREE.Vector3[] = [];
@@ -35,76 +38,15 @@ export function buildProps(q: QualitySettings, mats: HouseboatMaterials): PropsR
   const cypresses: TreeSpot[] = [];
   const willows: TreeSpot[] = [];
 
-  group.add(buildFloatingGardens(q, willows));
+  group.add(buildFloatingGardens(q, lib));
   group.add(buildLotus(q));
   group.add(buildCharChinar(chinars, lanterns));
-  group.add(buildGhat());
+  group.add(buildGhat(boatMats));
   group.add(buildBoulevard(lanterns, chinars));
   group.add(buildNishat(chinars, cypresses, lanterns));
   group.add(buildHariParbat());
   group.add(buildHouses(q, mats));
   return { group, lanterns, chinars, cypresses, willows };
-}
-
-// Raad: floating beds of reed and weed, planted in rows.
-function buildFloatingGardens(q: QualitySettings, willows: TreeSpot[]): THREE.Object3D {
-  const g = new THREE.Group();
-  const rng = new Rng(77);
-  const beds = new MeshBuilder(78, 0.12);
-  const plants: THREE.Matrix4[] = [];
-  const plantColors: THREE.Color[] = [];
-  const greens = ['#5d7d2e', '#6f8f35', '#4b6b2a', '#7f9a3c', '#8aa84a'];
-  const fruit = ['#c0392b', '#d35400', '#e67e22', '#b83227'];
-  const rowStep = q.tier === 'high' ? 1.05 : 1.7;
-
-  for (const p of GARDEN_PLOTS) {
-    beds.with(composeMatrix(p.x, 0, p.z, 0, p.rot), () => {
-      beds.box(p.w, 0.32, p.l, 0, -0.06, 0, '#4a4326');
-      beds.box(p.w - 0.6, 0.06, p.l - 0.6, 0, 0.12, 0, '#3f4a22');
-      // Reed fringe along the edges.
-      for (let z = -p.l / 2; z <= p.l / 2; z += 1.4) {
-        for (const x of [-p.w / 2, p.w / 2]) {
-          beds.add(new THREE.ConeGeometry(0.22, rng.range(0.6, 1.1), 4), '#7a7a3a', composeMatrix(x, 0.4, z + rng.range(-0.3, 0.3)));
-        }
-      }
-      // Bamboo poles that anchor the bed.
-      beds.cyl(0.04, 0.05, 2.6, 4, p.w / 2 - 0.3, 0.9, p.l / 2 - 0.4, '#b89a5a');
-      beds.cyl(0.04, 0.05, 2.4, 4, -p.w / 2 + 0.3, 0.8, -p.l / 2 + 0.4, '#b89a5a');
-      if (p.hut) {
-        beds.box(2.6, 1.8, 2.6, 0, 1.05, -p.l / 2 + 2.4, '#8a6a44');
-        beds.add(new THREE.ConeGeometry(2.3, 1.3, 4), '#a58a4e', composeMatrix(0, 2.6, -p.l / 2 + 2.4, 0, Math.PI / 4));
-      }
-    });
-    const rows = Math.max(2, Math.floor((p.w - 1.4) / 1.6));
-    const c = Math.cos(p.rot);
-    const s = Math.sin(p.rot);
-    for (let r = 0; r < rows; r++) {
-      const lx = -p.w / 2 + 1.2 + (r / Math.max(1, rows - 1)) * (p.w - 2.4);
-      for (let lz = -p.l / 2 + 1; lz < p.l / 2 - 1; lz += rowStep) {
-        if (p.hut && lz < -p.l / 2 + 4.2) continue;
-        const x = p.x + lx * c + lz * s;
-        const z = p.z - lx * s + lz * c;
-        const isFruit = rng.chance(0.12);
-        const sc = isFruit ? rng.range(0.16, 0.24) : rng.range(0.35, 0.7);
-        plants.push(composeMatrix(x, 0.15 + sc * 0.6, z, 0, rng.next() * 6, 0, sc, sc * rng.range(0.8, 1.4), sc));
-        plantColors.push(new THREE.Color(isFruit ? rng.pick(fruit) : rng.pick(greens)));
-      }
-    }
-    if (rng.chance(0.25)) willows.push({ x: p.x, z: p.z + p.l / 2 - 2, s: rng.range(0.6, 0.8), y: 0.1 });
-  }
-  const bedMesh = new THREE.Mesh(beds.build(), vegMaterial());
-  bedMesh.receiveShadow = true;
-  g.add(bedMesh);
-
-  const plantGeo = new THREE.IcosahedronGeometry(1, 0);
-  const plantMesh = new THREE.InstancedMesh(plantGeo, new THREE.MeshLambertMaterial({ flatShading: true }), plants.length);
-  plants.forEach((m, i) => {
-    plantMesh.setMatrixAt(i, m);
-    plantMesh.setColorAt(i, plantColors[i]);
-  });
-  plantMesh.castShadow = true;
-  g.add(plantMesh);
-  return g;
 }
 
 // Nadru: lotus pads and blossoms in the southern shallows.
@@ -174,7 +116,7 @@ function buildCharChinar(chinars: TreeSpot[], lanterns: THREE.Vector3[]): THREE.
 }
 
 // Shikara stand at the Boulevard steps: painted boats moored side by side.
-function buildGhat(): THREE.Object3D {
+function buildGhat(boatMats: ShikaraMaterials): THREE.Object3D {
   const g = new THREE.Group();
   const stone = new MeshBuilder(55, 0.08);
   const len = GHAT.z1 - GHAT.z0;
@@ -186,33 +128,18 @@ function buildGhat(): THREE.Object3D {
   stoneMesh.receiveShadow = true;
   g.add(stoneMesh);
 
-  const boats = new MeshBuilder(56);
-  const canopies = [
-    { color: '#1f5f8b', valance: '#f1c24b', fringe: '#ffffff', cushion: '#c0392b' },
-    { color: '#8e1c2c', valance: '#f3d27a', fringe: '#1d6b4a', cushion: '#e0a526' },
-    { color: '#2e6b3f', valance: '#f0b54a', fringe: '#b33b3b', cushion: '#a42d52' },
-    { color: '#f0e3c0', valance: '#b3322c', fringe: '#2d5f8c', cushion: '#7d2e67' },
-    { color: '#6b2d6b', valance: '#e8c15a', fringe: '#ffffff', cushion: '#1f6f8b' },
-  ];
+  // Moored shikaras, merged by material into a handful of draw calls.
+  const canopies: FabricKey[] = ['royal', 'crimson', 'emerald', 'saffron'];
+  const tints = ['#7d5234', '#8c5e3c', '#6e472d'];
   const rng = new Rng(57);
+  const parts: Part[] = [];
   let i = 0;
   for (let z = GHAT.z0 + 2; z < GHAT.z1 - 1; z += 3.4) {
-    const style: ShikaraStyle = {
-      length: 8.4,
-      width: 1.45,
-      segments: 14,
-      wood: rng.pick(['#4d2e1b', '#5a3520', '#3f2618']),
-      trim: rng.pick(['#d8b25a', '#e3d2a8', '#c8913e']),
-      deck: '#7a5234',
-      canopy: canopies[i++ % canopies.length],
-      seed: 200 + i,
-    };
-    boats.with(composeMatrix(BOULEVARD_X - 5.8, 0.02, z, 0, -Math.PI / 2 + rng.range(-0.04, 0.04)), () => addShikara(boats, style));
+    const spec = { length: 8.4, width: 1.45, canopy: canopies[i % canopies.length], boatman: false, flowers: false, seed: 200 + i, stations: 32, hullTint: tints[i % tints.length], detail: 'low' as const };
+    i++;
+    parts.push(...transformParts(buildShikaraParts(spec, boatMats), composeMatrix(BOULEVARD_X - 5.8, 0.02, z, 0, -Math.PI / 2 + rng.range(-0.04, 0.04))));
   }
-  const boatMesh = new THREE.Mesh(boats.build(), shikaraMaterial());
-  boatMesh.castShadow = true;
-  boatMesh.receiveShadow = true;
-  g.add(boatMesh);
+  g.add(partsToGroup(parts));
   return g;
 }
 

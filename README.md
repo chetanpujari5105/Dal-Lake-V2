@@ -2,7 +2,7 @@
 
 A stylised, playable 3D boat journey across Dal Lake in Srinagar, built with Vite, TypeScript and Three.js. You paddle a decorated shikara at golden hour, past carved houseboats along the Boulevard, the shikara ghat, Nishat Bagh's terraces, Char Chinar island, the floating gardens and the lotus beds, with Hari Parbat's fort on the western skyline.
 
-The code, geometry, textures and sound are original and procedural. The project downloads no models, images or audio files.
+Code, geometry and sound are original and procedural. The only third-party files are four CC0 photo-texture sets from Poly Haven (wood, mud, rock); see [ASSET_CREDITS.md](ASSET_CREDITS.md).
 
 ## Setup
 
@@ -53,13 +53,19 @@ src/
   app.ts                orchestration: load steps, frame loop, preset blending, captions
   core/                 math + noise, MeshBuilder (merged, vertex-coloured geometry),
                         quality tiers + adaptive step-down, renderer + resize
-  assets/               loader (progress steps), procedural textures (ripple map, name boards)
+  assets/               loader (progress steps), procedural textures (ripple map, name boards),
+                        textureLibrary (CC0 photo textures + painted fabric, carpet and foliage cards)
   world/
     layout.ts           shoreline polygon, signed-distance field, terrain height,
                         obstacle footprints, landmarks, spawn, flower-seller route
     terrain.ts          polar terrain mesh (dense near shore, sparse to the ranges), embankment
     water.ts            water shader, planar reflection, wake/ripple emitters
-    shikara.ts          lofted shikara hull, canopy, boatman + heart-shaped paddle, player boat
+    shikaraModel.ts     detailed shikara: lofted planked hull, carved rails, turned posts, fabric canopy,
+                        scalloped valance, curtains, cushions, boatman, heart-shaped paddle
+    shikara.ts          player boat: bobbing, tilting, paddling, wake emission
+    gardens.ts          floating gardens: irregular domed beds, crops, grass, reeds
+    shoreline.ts        reeds, bank grass and stones along the natural shore
+    foliage.ts          wind-swayed alpha-card foliage, rosettes, stones, instancing helper
     houseboat.ts        carved houseboats with LOD'd fretwork and painted name boards
     props.ts            floating gardens, lotus, Char Chinar, ghat, Boulevard, Nishat Bagh,
                         Hari Parbat fort, Kashmiri houses
@@ -117,7 +123,8 @@ Possible next steps: Hazratbal and the Shalimar/Nishat approaches along the nort
 
 ## Credits
 
-- **Code, models, textures, sounds:** original to this project, generated procedurally at runtime.
+- **Code, models, sounds:** original to this project, generated procedurally at runtime.
+- **Textures:** Dark Planks, Brown Planks 07, Brown Mud Rocks 01 (Rob Tuytel) and Rock Boulder Dry (Dimitrios Savva, Rico Cilliers), from Poly Haven under CC0. The full list is in [ASSET_CREDITS.md](ASSET_CREDITS.md).
 - **three.js:** MIT licence, © three.js authors. The planar-reflection maths follows the approach of three's `Reflector` example.
 - **Fonts:** [Cormorant Garamond](https://fonts.google.com/specimen/Cormorant+Garamond) (Christian Thalmann) and [Inter](https://fonts.google.com/specimen/Inter) (Rasmus Andersson), both under the SIL Open Font License, served by Google Fonts. Offline, the UI falls back to Georgia and system sans-serif.
 - **Place references:** the layout and forms draw on public photographs and maps of Dal Lake: Boulevard houseboats, shikara ghats, Char Chinar, the Raad floating gardens, Nishat Bagh and Hari Parbat. The scene is an interpretation, not a survey. Houseboat names are invented.

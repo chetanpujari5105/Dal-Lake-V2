@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { MeshBuilder } from '../core/geometry';
 import { clamp, dampAngle } from '../core/math';
 import type { DynamicCircle } from '../controls/boatController';
 import { FLOWER_ROUTE, waterHeight } from './layout';
-import { addShikara, buildPaddle, deckHeightAt, shikaraMaterial, type ShikaraStyle } from './shikara';
+import {
+  boatmanSeat, buildPaddleRig, buildShikaraParts, PADDLE_SHOULDER, partsToGroup, type ShikaraMaterials, type ShikaraSpec,
+} from './shikaraModel';
 
 interface Vendor {
   root: THREE.Group;
@@ -16,15 +17,16 @@ interface Vendor {
   wake: number;
 }
 
-const STYLE: ShikaraStyle = {
+const SPEC: ShikaraSpec = {
   length: 6.4,
   width: 1.25,
-  segments: 16,
-  wood: '#4a2c1a',
-  trim: '#c79a4a',
-  deck: '#6b4a2e',
-  boatman: { pheran: '#5d6b74', cap: '#dcd6cc' },
+  canopy: null,
+  boatman: true,
   flowers: true,
+  seed: 300,
+  stations: 40,
+  hullTint: '#7a5236',
+  detail: 'low',
 };
 
 /** Flower sellers paddling a slow loop between the houseboats and the island. */
@@ -36,21 +38,17 @@ export class FlowerBoats {
   private length: number;
   private circles: DynamicCircle[] = [];
 
-  constructor(count: number) {
+  constructor(count: number, mats: ShikaraMaterials) {
     this.curve = new THREE.CatmullRomCurve3(FLOWER_ROUTE.map(([x, z]) => new THREE.Vector3(x, 0, z)), true, 'centripetal');
     this.length = this.curve.getLength();
     this.group.name = 'flower-boats';
 
     for (let i = 0; i < count; i++) {
-      const b = new MeshBuilder(300 + i);
-      addShikara(b, { ...STYLE, seed: 300 + i });
-      const mesh = new THREE.Mesh(b.build(), shikaraMaterial());
-      mesh.castShadow = true;
       const tilt = new THREE.Group();
-      tilt.add(mesh);
-      const paddle = buildPaddle(STYLE.boatman!.pheran);
-      const zb = -STYLE.length / 2 + 1.05 * (STYLE.length / 9);
-      paddle.position.set(0.16, deckHeightAt(STYLE, zb) + 0.72, zb + 0.08);
+      tilt.add(partsToGroup(buildShikaraParts({ ...SPEC, seed: 300 + i }, mats)));
+      const paddle = buildPaddleRig(mats);
+      const seat = boatmanSeat(SPEC);
+      paddle.position.set(PADDLE_SHOULDER.x, seat.y + PADDLE_SHOULDER.y, seat.z + PADDLE_SHOULDER.dz);
       tilt.add(paddle);
       const root = new THREE.Group();
       root.add(tilt);

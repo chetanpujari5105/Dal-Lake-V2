@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { runLoadSteps } from './assets/loader';
+import { loadTextureLibrary, type TextureLibrary } from './assets/textureLibrary';
 import { createRippleNormalMap } from './assets/textures';
 import { Birds } from './atmosphere/birds';
 import { Lighting } from './atmosphere/lighting';
@@ -20,6 +21,8 @@ import { buildHouseboat, createHouseboatMaterials, type HouseboatInstance, type 
 import { HOUSEBOATS, LANDMARKS, OBSTACLES, SPAWN } from './world/layout';
 import { buildProps } from './world/props';
 import { PlayerShikara } from './world/shikara';
+import { createShikaraMaterials, type ShikaraMaterials } from './world/shikaraModel';
+import { buildShoreFringe } from './world/shoreline';
 import { buildEmbankment, buildTerrain } from './world/terrain';
 import { buildVegetation } from './world/vegetation';
 import { Water } from './world/water';
@@ -51,6 +54,8 @@ export class App {
   private flowerBoats!: FlowerBoats;
   private houseboats: HouseboatInstance[] = [];
   private houseboatMats!: HouseboatMaterials;
+  private textures!: TextureLibrary;
+  private boatMats!: ShikaraMaterials;
   private adaptive: AdaptiveQuality;
   private fog = new THREE.FogExp2('#e2b490', 0.0004);
 
@@ -151,6 +156,14 @@ export class App {
     await runLoadSteps(
       [
         {
+          label: 'Gathering materials',
+          weight: 2,
+          run: async () => {
+            this.textures = await loadTextureLibrary(this.renderer);
+            this.boatMats = createShikaraMaterials(this.textures);
+          },
+        },
+        {
           label: 'Weaving ripples',
           weight: 1,
           run: () => {
@@ -183,11 +196,12 @@ export class App {
           label: 'Planting the shore',
           weight: 3,
           run: () => {
-            const props = buildProps(q, this.houseboatMats);
+            const props = buildProps(q, this.houseboatMats, this.boatMats, this.textures);
             scene.add(props.group);
+            scene.add(buildShoreFringe(q, this.textures));
             scene.add(buildVegetation(q, props, NO_REFLECT));
             const lanterns = [...props.lanterns, ...this.houseboats.flatMap((h) => h.lanterns)];
-            this.flowerBoats = new FlowerBoats(q.tier === 'high' ? 3 : 2);
+            this.flowerBoats = new FlowerBoats(q.tier === 'high' ? 3 : 2, this.boatMats);
             scene.add(this.flowerBoats.group);
             this.glows = new Glows(lanterns, 1 + this.flowerBoats.lanterns.length);
             scene.add(this.glows.points);
@@ -197,7 +211,7 @@ export class App {
           label: 'Launching the shikara',
           weight: 1,
           run: () => {
-            this.player = new PlayerShikara();
+            this.player = new PlayerShikara(this.boatMats);
             scene.add(this.player.root);
             this.rig = new CameraRig(this.camera, this.renderer.domElement, OBSTACLES, this.reducedMotion);
             this.rig.setMode('cinematic');
@@ -353,6 +367,7 @@ export class App {
     sharedUniforms.uFogDensity.value = s.fogDensity;
     sharedUniforms.uSunDir.value.copy(s.sunDir);
     sharedUniforms.uSunColor.value.copy(s.sunColor);
+    sharedUniforms.uWind.value = this.reducedMotion ? s.wind * 0.4 : s.wind;
 
     // Boat.
     const axes = this.input.read();
