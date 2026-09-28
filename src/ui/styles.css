@@ -382,7 +382,8 @@ kbd {
 .music[data-status='loading'] .music-vol {
   display: none;
 }
-.music[data-status='unavailable'] .music-btn {
+.music[data-status='unavailable'] .music-btn,
+.music[data-status='unavailable'] .music-note {
   color: var(--ink-faint);
   cursor: help;
 }

@@ -53,6 +53,10 @@ export class UI {
     document.documentElement.classList.toggle('is-touch', isTouch);
 
     this.musicBtn.addEventListener('click', () => this.toggleMusic());
+    // People click the words as often as the icon; the label explains too.
+    this.musicNote.addEventListener('click', () => {
+      if (this.musicStatus === 'unavailable') this.toggleMusic();
+    });
     this.musicVol.addEventListener('input', () => {
       const v = Number(this.musicVol.value) / 100;
       this.musicVol.setAttribute('aria-valuetext', `${Math.round(v * 100)}%`);

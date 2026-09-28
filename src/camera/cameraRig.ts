@@ -214,8 +214,11 @@ export class CameraRig {
     const ang = this.camHeading + this.yaw;
     const bx = -Math.sin(ang);
     const bz = -Math.cos(ang);
-    const [fx, fz] = fwd(s.heading);
-    this.desiredLook.set(s.x + fx * this.lookAhead, this.lookHeight, s.z + fz * this.lookAhead);
+    // Look ahead along the camera's own orbit direction (not the boat's heading),
+    // so the shikara stays in frame from any angle the player drags to.
+    const lx = -bx;
+    const lz = -bz;
+    this.desiredLook.set(s.x + lx * this.lookAhead, this.lookHeight, s.z + lz * this.lookAhead);
 
     // Portrait screens are narrow: pull back and look down a little more so the
     // whole shikara and the water ahead still fit.
