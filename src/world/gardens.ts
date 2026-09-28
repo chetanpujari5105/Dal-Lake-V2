@@ -3,7 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { TextureLibrary } from '../assets/textureLibrary';
 import { Rng } from '../core/math';
 import type { QualitySettings } from '../core/quality';
-import { crossedCards, foliageMaterial, instanced, rosette, type Instance } from './foliage';
+import { NO_REFLECT } from '../core/layers';
+import { crossedCards, foliageMaterial, instancedCells, rosette, type Instance } from './foliage';
 import { GARDEN_PLOTS, type GardenPlot } from './layout';
 
 // Raad: floating beds of reed and lake weed. Each bed is an irregular, domed mat
@@ -203,19 +204,20 @@ export function buildFloatingGardens(q: QualitySettings, lib: TextureLibrary): T
     }
   }
 
+  // Split into culled cells with draw distances: beyond these a tuft or a
+  // collard is a pixel or two across. Grass and reeds skip the reflection pass.
   const a2c = q.tier === 'high';
-  const cropMesh = instanced(rosette(7, 4), foliageMaterial(lib.leaf, 0.03, a2c), crops);
-  const grassMesh = instanced(crossedCards(3), foliageMaterial(lib.grass, 0.07, a2c), grass);
-  const reedMesh = instanced(crossedCards(3), foliageMaterial(lib.reed, 0.09, a2c), reeds);
-  for (const m of [cropMesh, grassMesh, reedMesh]) m.receiveShadow = true;
-  cropMesh.castShadow = true;
-  group.add(cropMesh, grassMesh, reedMesh);
+  const k = q.tier === 'high' ? 1 : 0.7;
+  group.add(
+    instancedCells(rosette(7, 4), foliageMaterial(lib.leaf, 0.03, a2c), crops, { cell: 130, far: 300 * k, castShadow: true }),
+    instancedCells(crossedCards(3), foliageMaterial(lib.grass, 0.07, a2c), grass, { cell: 130, far: 170 * k, layer: NO_REFLECT }),
+    instancedCells(crossedCards(3), foliageMaterial(lib.reed, 0.09, a2c), reeds, { cell: 130, far: 260 * k }),
+  );
 
   if (gourds.length) {
-    const gourdMesh = instanced(new THREE.SphereGeometry(1, 9, 7), new THREE.MeshStandardMaterial({ roughness: 0.55 }), gourds);
-    gourdMesh.castShadow = true;
-    group.add(gourdMesh);
+    group.add(instancedCells(new THREE.SphereGeometry(1, 9, 7), new THREE.MeshStandardMaterial({ roughness: 0.55 }), gourds, { cell: 130, far: 160 * k, castShadow: true }));
   }
+
   const poleMesh = new THREE.Mesh(
     mergeGeometries(poles)!,
     new THREE.MeshStandardMaterial({ color: '#b39862', roughness: 0.7 }),

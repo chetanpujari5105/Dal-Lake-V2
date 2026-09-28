@@ -81,11 +81,12 @@ src/
     shikara.ts          player boat: bobbing, tilting, paddling, wake emission
     gardens.ts          floating gardens: irregular domed beds, crops, grass, reeds
     shoreline.ts        reeds, bank grass and stones along the natural shore
-    foliage.ts          wind-swayed alpha-card foliage, rosettes, stones, instancing helper
-    houseboat.ts        carved houseboats with LOD'd fretwork and painted name boards
+    foliage.ts          wind-swayed alpha-card foliage, rosettes, stones, instancing helpers (plain and cell-culled)
+    houseboat.ts        carved houseboats (lofted hull, tin roofs, lattice windows), merged per material
     props.ts            floating gardens, lotus, Char Chinar, ghat, Boulevard, Nishat Bagh,
                         Hari Parbat fort, Kashmiri houses
-    vegetation.ts       instanced poplar, chinar, willow, cypress, deodar
+    trees.ts            painted leaf and impostor atlases, leaf-card tree models, tree materials
+    vegetation.ts       tree placement and per-frame model/impostor swap with culling
     flowerBoats.ts      flower sellers paddling a loop
   atmosphere/
     presets.ts          dawn / sunset / night × clear / rain, smooth blending, shared uniforms
@@ -110,8 +111,12 @@ src/
 ### Performance
 
 - **Pixel ratio:** capped at 1.75 on desktop and 1.5 on mobile.
-- **Batching:** repeated props are batched (merged vertex-coloured meshes) or instanced. Houseboat fretwork is hidden beyond 230 m.
-- **Shadows:** one shadow map (2048 desktop, 1024 mobile) covering 110 m around the boat, refreshed once per frame and shared with the reflection pass.
+- **Trees:** every tree has a near model (leaf cards) and a far impostor (3 crossed quads). Each frame, trees within 190 m (125 m on mobile) that are inside the view use the model; everything else is an impostor. Impostors are grouped into 700 m cells, so the cells behind the camera are culled.
+- **Ground cover:** garden crops, grass, reeds and bank stones are instanced in 130–150 m cells with draw distances of 150–300 m, shorter on mobile. Off-screen and distant cells cost nothing. Grass is left out of the reflection pass.
+- **Batching:** all 13 houseboats merge into one mesh per material, with their name boards in one texture atlas. Carving is one mesh per mooring row and is hidden beyond 150 m. Moored ghat boats swap to a coarse version beyond 110 m. Village houses are merged into four meshes.
+- **Terrain:** inner and outer grids are split into angular sectors that are frustum-culled. Per-pixel detail runs only where its mask is non-zero.
+- **Shadows:** one shadow map (2048 desktop, 1024 mobile) covering 110 m around the boat. It refreshes every second frame (the sun is fixed and the boat slow) and is shared with the reflection pass.
+- **Measured:** see [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for triangles, draw calls and frame rate at each stage.
 - **Adaptive quality:** if frames stay slower than ~38 fps, quality steps down in order: pixel ratio, reflections, pixel ratio 1, shadows.
 - **Background tabs:** rendering pauses when the tab is hidden, and audio suspends.
 

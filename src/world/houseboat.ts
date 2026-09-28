@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { TextureLibrary } from '../assets/textureLibrary';
 import { tinTexture, triplanar } from '../assets/surfaces';
-import { createNameBoard } from '../assets/textures';
+import { createNameBoardAtlas } from '../assets/textures';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { composeMatrix, MeshBuilder } from '../core/geometry';
 import { Rng } from '../core/math';
 import type { HouseboatPlacement } from './layout';
@@ -29,6 +30,8 @@ export interface HouseboatMaterials {
   roof: THREE.MeshStandardMaterial;
   windowLit: THREE.MeshStandardMaterial;
   windowDim: THREE.MeshStandardMaterial;
+  /** All name boards in one atlas (row per houseboat index). */
+  boards: THREE.MeshStandardMaterial;
 }
 
 export function createHouseboatMaterials(lib: TextureLibrary): HouseboatMaterials {
@@ -51,6 +54,10 @@ export function createHouseboatMaterials(lib: TextureLibrary): HouseboatMaterial
     roof,
     windowLit: new THREE.MeshStandardMaterial({ color: '#2a1d12', emissive: '#ffa04a', emissiveIntensity: 0, roughness: 0.3 }),
     windowDim: new THREE.MeshStandardMaterial({ color: '#1d1916', emissive: '#ff9540', emissiveIntensity: 0, roughness: 0.3 }),
+    boards: new THREE.MeshStandardMaterial({
+      map: createNameBoardAtlas(NAMES.map((name, i) => ({ name, bg: PALETTES[i % PALETTES.length].board, fg: PALETTES[i % PALETTES.length].ink }))),
+      roughness: 0.7,
+    }),
   };
 }
 
@@ -318,6 +325,9 @@ export function buildHouseboat(place: HouseboatPlacement, index: number, mats: H
     detail.box(0.02, 0.3, 0.02, p.x, p.y + 0.27, p.z, '#2a2018');
   }
 
+  // Name-board backing, merged into the main mesh (it shares the wood material).
+  main.box(4.05, 1.05, 0.08, 0, roofY + 0.72, vz1 + 0.41, pal.trim);
+
   const group = new THREE.Group();
   const hullMesh = new THREE.Mesh(hullGeometry(L, W, '#3a2c22', pal.accent), mats.hull);
   const mainMesh = new THREE.Mesh(main.build(), mats.wood);
@@ -327,6 +337,7 @@ export function buildHouseboat(place: HouseboatPlacement, index: number, mats: H
     m.receiveShadow = true;
   }
   const detailMesh = new THREE.Mesh(detail.build(), mats.wood);
+  detailMesh.userData.detail = true;
   detailMesh.castShadow = true;
   const litMesh = new THREE.Mesh(lit.build(), mats.windowLit);
   const dimMesh = new THREE.Mesh(dim.build(), mats.windowDim);
@@ -334,12 +345,13 @@ export function buildHouseboat(place: HouseboatPlacement, index: number, mats: H
 
   // Painted name board above the verandah.
   const name = NAMES[index % NAMES.length];
-  const tex = createNameBoard(name, pal.board, pal.ink);
-  const board = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 0.83), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }));
+  const boardGeo = new THREE.PlaneGeometry(3.8, 0.83);
+  const row = index % NAMES.length;
+  const uv = boardGeo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - (row + 1 - uv.getY(i)) / NAMES.length);
+  const board = new THREE.Mesh(boardGeo, mats.boards);
   board.position.set(0, roofY + 0.72, vz1 + 0.47);
-  const boardBack = new MeshBuilder(1);
-  boardBack.box(4.05, 1.05, 0.08, 0, roofY + 0.72, vz1 + 0.41, pal.trim);
-  group.add(board, new THREE.Mesh(boardBack.build(), mats.wood));
+  group.add(board);
 
   // Bow faces west, toward the open lake and the setting sun.
   group.rotation.y = -Math.PI / 2;
@@ -357,4 +369,67 @@ function turnedProfile(h: number): THREE.Vector2[] {
     new THREE.Vector2(0.075, h * 0.35), new THREE.Vector2(0.11, h * 0.42), new THREE.Vector2(0.075, h * 0.5),
     new THREE.Vector2(0.07, h * 0.85), new THREE.Vector2(0.12, h * 0.93), new THREE.Vector2(0.14, h), new THREE.Vector2(0.001, h),
   ];
+}
+
+export interface HouseboatRow {
+  detail: THREE.Mesh;
+  /** Row extent along the Boulevard, for the detail draw distance. */
+  x: number;
+  z0: number;
+  z1: number;
+}
+
+/**
+ * Bakes every houseboat into one mesh per material (hull, wood, tin, windows,
+ * boards), plus one carving mesh per mooring row that can drop out with
+ * distance. Thirteen boats go from about 90 draw calls to about 8.
+ */
+export function mergeHouseboats(list: HouseboatInstance[]): { group: THREE.Group; rows: HouseboatRow[] } {
+  const byMat = new Map<string, { mat: THREE.Material; geos: THREE.BufferGeometry[]; cast: boolean }>();
+  const rowGeos: THREE.BufferGeometry[][] = [[], []];
+  const rowZ: [number, number][] = [[Infinity, -Infinity], [Infinity, -Infinity]];
+  let rowMat: THREE.Material | null = null;
+  let rowX = 0;
+  for (const hb of list) {
+    hb.group.updateMatrixWorld(true);
+    const r = hb.group.position.z < 0 ? 0 : 1;
+    rowZ[r][0] = Math.min(rowZ[r][0], hb.group.position.z - 15);
+    rowZ[r][1] = Math.max(rowZ[r][1], hb.group.position.z + 15);
+    rowX = hb.group.position.x;
+    hb.group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      let g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+      g = g.applyMatrix4(mesh.matrixWorld);
+      if (mesh.userData.detail) {
+        rowGeos[r].push(g);
+        rowMat = mesh.material as THREE.Material;
+        return;
+      }
+      const mat = mesh.material as THREE.Material;
+      const key = `${mat.uuid}:${Object.keys(g.attributes).sort().join(',')}`;
+      const e = byMat.get(key) ?? { mat, geos: [], cast: mesh.castShadow };
+      e.geos.push(g);
+      byMat.set(key, e);
+    });
+  }
+  const group = new THREE.Group();
+  group.name = 'houseboats';
+  for (const { mat, geos, cast } of byMat.values()) {
+    const mesh = new THREE.Mesh(mergeGeometries(geos)!, mat);
+    mesh.castShadow = cast;
+    mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    group.add(mesh);
+  }
+  const rows: HouseboatRow[] = [];
+  rowGeos.forEach((geos, r) => {
+    if (!geos.length || !rowMat) return;
+    const mesh = new THREE.Mesh(mergeGeometries(geos)!, rowMat);
+    mesh.castShadow = true;
+    mesh.matrixAutoUpdate = false;
+    group.add(mesh);
+    rows.push({ detail: mesh, x: rowX, z0: rowZ[r][0], z1: rowZ[r][1] });
+  });
+  return { group, rows };
 }

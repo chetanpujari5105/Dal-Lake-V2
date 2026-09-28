@@ -20,8 +20,14 @@ export interface TreeSpot {
   s: number;
 }
 
+export interface Lod {
+  update(cam: THREE.Vector3): void;
+}
+
 export interface PropsResult {
   group: THREE.Group;
+  /** Distance switches to run each frame. */
+  lods: Lod[];
   lanterns: THREE.Vector3[];
   chinars: TreeSpot[];
   cypresses: TreeSpot[];
@@ -49,12 +55,13 @@ export function buildProps(q: QualitySettings, mats: HouseboatMaterials, boatMat
   group.add(buildFloatingGardens(q, lib));
   group.add(buildLotus(q));
   group.add(buildCharChinar(chinars, lanterns));
-  group.add(buildGhat(boatMats));
+  const lods: Lod[] = [];
+  group.add(buildGhat(boatMats, lods));
   group.add(buildBoulevard(lanterns, chinars));
   group.add(buildNishat(chinars, cypresses, lanterns));
   group.add(buildHariParbat());
   group.add(buildHouses(q, mats));
-  return { group, lanterns, chinars, cypresses, willows };
+  return { group, lods, lanterns, chinars, cypresses, willows };
 }
 
 // Nadru: lotus pads and blossoms in the southern shallows.
@@ -124,8 +131,11 @@ function buildCharChinar(chinars: TreeSpot[], lanterns: THREE.Vector3[]): THREE.
 }
 
 // Shikara stand at the Boulevard steps: painted boats moored side by side.
-function buildGhat(boatMats: ShikaraMaterials): THREE.Object3D {
+// Near: the full low-detail boats. Far (beyond ~110 m): coarser hulls with the
+// canopy, posts and valance only, merged into a handful of draw calls.
+function buildGhat(boatMats: ShikaraMaterials, lods: Lod[]): THREE.Object3D {
   const g = new THREE.Group();
+  g.name = 'ghat';
   const stone = new MeshBuilder(55, 0.08);
   const len = GHAT.z1 - GHAT.z0;
   const zc = (GHAT.z0 + GHAT.z1) / 2;
@@ -136,18 +146,43 @@ function buildGhat(boatMats: ShikaraMaterials): THREE.Object3D {
   stoneMesh.receiveShadow = true;
   g.add(stoneMesh);
 
-  // Moored shikaras, merged by material into a handful of draw calls.
   const canopies: FabricKey[] = ['royal', 'crimson', 'emerald', 'saffron'];
   const tints = ['#7d5234', '#8c5e3c', '#6e472d'];
   const rng = new Rng(57);
-  const parts: Part[] = [];
+  const near: Part[] = [];
+  const far: Part[] = [];
+  const skip = new Set<THREE.Material>([...boatMats.cushion, boatMats.carpet, boatMats.brass, ...Object.values(boatMats.fabric)]);
   let i = 0;
   for (let z = GHAT.z0 + 2; z < GHAT.z1 - 1; z += 3.4) {
-    const spec = { length: 8.4, width: 1.45, canopy: canopies[i % canopies.length], boatman: false, flowers: false, seed: 200 + i, stations: 32, hullTint: tints[i % tints.length], detail: 'low' as const };
+    const base = { length: 8.4, width: 1.45, canopy: canopies[i % canopies.length], boatman: false, flowers: false, seed: 200 + i, hullTint: tints[i % tints.length], detail: 'low' as const };
     i++;
-    parts.push(...transformParts(buildShikaraParts(spec, boatMats), composeMatrix(BOULEVARD_X - 5.8, 0.02, z, 0, -Math.PI / 2 + rng.range(-0.04, 0.04))));
+    const m = composeMatrix(BOULEVARD_X - 5.8, 0.02, z, 0, -Math.PI / 2 + rng.range(-0.04, 0.04));
+    near.push(...transformParts(buildShikaraParts({ ...base, stations: 32 }, boatMats), m));
+    const coarse = buildShikaraParts({ ...base, stations: 12 }, boatMats);
+    // Keep the roof (the first fabric part); drop curtains, cushions and brass.
+    let roofKept = false;
+    const kept = coarse.filter((p) => {
+      if (Object.values(boatMats.fabric).includes(p.material as THREE.MeshStandardMaterial)) {
+        if (roofKept) return false;
+        roofKept = true;
+        return true;
+      }
+      return !skip.has(p.material);
+    });
+    far.push(...transformParts(kept, m));
   }
-  g.add(partsToGroup(parts));
+  const nearGroup = partsToGroup(near);
+  const farGroup = partsToGroup(far, false);
+  farGroup.visible = false;
+  g.add(nearGroup, farGroup);
+  const centre = new THREE.Vector3(BOULEVARD_X - 5.8, 0, zc);
+  lods.push({
+    update(cam) {
+      const isNear = cam.distanceTo(centre) < 110;
+      nearGroup.visible = isNear;
+      farGroup.visible = !isNear;
+    },
+  });
   return g;
 }
 
@@ -260,6 +295,7 @@ function buildHariParbat(): THREE.Object3D {
 // projecting wooden balcony (dub) on the upper floor, grouped into villages.
 function buildHouses(q: QualitySettings, mats: HouseboatMaterials): THREE.Object3D {
   const g = new THREE.Group();
+  g.name = 'houses';
   const rng = new Rng(123);
   const walls = new MeshBuilder(124, 0.1);
   const wood = new MeshBuilder(126, 0.08);
@@ -326,10 +362,9 @@ function buildHouses(q: QualitySettings, mats: HouseboatMaterials): THREE.Object
         for (let c = 0; c < cols; c++) {
           const wz = -l / 2 + ((c + 0.5) / cols) * l;
           for (const sx of [-1, 1]) {
+            // Houses are seen from 250 m+, so a pane and a timber lintel are enough.
             windows.box(0.06, 1.1, 0.8, sx * (w / 2 + 0.03), 1.3 + f * fh, wz, '#ffffff');
-            wood.box(0.08, 1.3, 0.12, sx * (w / 2 + 0.05), 1.3 + f * fh, wz - 0.46, timber);
-            wood.box(0.08, 1.3, 0.12, sx * (w / 2 + 0.05), 1.3 + f * fh, wz + 0.46, timber);
-            wood.box(0.1, 0.12, 1.1, sx * (w / 2 + 0.06), 1.95 + f * fh, wz, timber);
+            wood.box(0.1, 0.14, 1.1, sx * (w / 2 + 0.06), 1.95 + f * fh, wz, timber);
           }
         }
       }

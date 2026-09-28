@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { sharedUniforms } from '../atmosphere/presets';
+import { cellInstanced } from '../core/cells';
 import { Rng } from '../core/math';
 
 /**
@@ -132,4 +133,26 @@ export function instanced(geo: THREE.BufferGeometry, mat: THREE.Material, list: 
   mesh.count = list.length;
   mesh.computeBoundingSphere();
   return mesh;
+}
+
+export interface CellOptions {
+  cell: number;
+  far: number;
+  castShadow?: boolean;
+  /** Layer for the meshes; small ground cover goes on the no-reflection layer. */
+  layer?: number;
+}
+
+/** Like `instanced`, but split into culled spatial cells with a draw distance. */
+export function instancedCells(geo: THREE.BufferGeometry, mat: THREE.Material, list: Instance[], o: CellOptions): THREE.Group {
+  const items = list.map((it) => {
+    _e.set(it.tilt ?? 0, it.ry, (it.tilt ?? 0) * 0.5, 'YXZ');
+    _q.setFromEuler(_e);
+    return { x: it.x, z: it.z, matrix: new THREE.Matrix4().compose(_p.set(it.x, it.y, it.z), _q, _s.set(it.sx, it.sy, it.sx)), color: it.color };
+  });
+  return cellInstanced(geo, mat, items, o.cell, o.far, (m) => {
+    m.receiveShadow = true;
+    m.castShadow = o.castShadow ?? false;
+    if (o.layer !== undefined) m.layers.set(o.layer);
+  });
 }

@@ -179,30 +179,38 @@ function terrainMaterial(high: boolean): THREE.MeshLambertMaterial {
         float tdist = length(vWPos - cameraPosition);
         float tfade = 1.0 - smoothstep(500.0, 2600.0, tdist);
         vec3 tc = diffuseColor.rgb;
-        // Canopy: clumps of crowns a few metres across, with lit tops and dark gaps.
-        float can = fbm3(tp * 0.12);
-        float crowns = vnoise(tp * 0.5);
-        float cm = vMask.x * mix(0.5, 1.0, tfade);
-        tc *= mix(1.0, 0.5 + 0.8 * can, cm);
-        tc = mix(tc, tc * 1.3, smoothstep(0.6, 0.85, crowns) * cm * 0.7);
-        // Meadow: soft patches of taller and shorter grass.
-        float mead = fbm3(tp * 0.3 + 5.0);
-        tc *= mix(1.0, 0.8 + 0.4 * mead, vMask.z * tfade);
-        // Rock: horizontal strata and weathering streaks.
-        float strata = vnoise(vec2(vWPos.y * 0.12 + fbm3(tp * 0.02) * 3.0, (tp.x + tp.y) * 0.01));
-        float weather = fbm3(tp * 0.05);
-        tc *= mix(1.0, (0.86 + 0.22 * strata) * (0.8 + 0.35 * weather), vMask.y);
+        // Each detail layer runs only where its mask is non-zero.
+        if (vMask.x > 0.01) {
+          // Canopy: clumps of crowns a few metres across, with lit tops and dark gaps.
+          float can = fbm3(tp * 0.12);
+          float crowns = vnoise(tp * 0.5);
+          float cm = vMask.x * mix(0.5, 1.0, tfade);
+          tc *= mix(1.0, 0.5 + 0.8 * can, cm);
+          tc = mix(tc, tc * 1.3, smoothstep(0.6, 0.85, crowns) * cm * 0.7);
+        }
+        if (vMask.z * tfade > 0.01) {
+          // Meadow: soft patches of taller and shorter grass.
+          float mead = fbm3(tp * 0.3 + 5.0);
+          tc *= mix(1.0, 0.8 + 0.4 * mead, vMask.z * tfade);
+        }
+        if (vMask.y > 0.01) {
+          // Rock: horizontal strata and weathering streaks.
+          float weather = fbm3(tp * 0.05);
+          float strata = vnoise(vec2(vWPos.y * 0.12 + weather * 3.0, (tp.x + tp.y) * 0.01));
+          tc *= mix(1.0, (0.86 + 0.22 * strata) * (0.8 + 0.35 * weather), vMask.y);
+        }
         diffuseColor.rgb = tc;`,
       )
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
         ${high ? `{
-          vec2 bq = vWPos.xz * 0.16;
-          float b0 = fbm3(bq);
-          float bx = fbm3(bq + vec2(0.06, 0.0));
-          float bz = fbm3(bq + vec2(0.0, 0.06));
-          float amt = (0.25 + vMask.x * 0.9 + vMask.y * 1.2) * tfade * 7.0;
+          // Single-octave micro relief: three value-noise taps, not three fbm stacks.
+          vec2 bq = vWPos.xz * 0.2;
+          float b0 = vnoise(bq);
+          float bx = vnoise(bq + vec2(0.08, 0.0));
+          float bz = vnoise(bq + vec2(0.0, 0.08));
+          float amt = (0.25 + vMask.x * 0.9 + vMask.y * 1.2) * tfade * 5.0;
           vec3 bump = vec3(b0 - bx, 0.0, b0 - bz) * amt;
           normal = normalize(normal + (viewMatrix * vec4(bump, 0.0)).xyz);
         }` : ''}`,

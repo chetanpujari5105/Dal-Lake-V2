@@ -57,31 +57,40 @@ export function createRippleNormalMap(size = 256, seed = 11): THREE.DataTexture 
   return tex;
 }
 
-/** Hand-painted style name board for a houseboat. */
-export function createNameBoard(name: string, bg: string, fg: string): THREE.CanvasTexture {
+function drawNameBoard(ctx: CanvasRenderingContext2D, y0: number, w: number, h: number, name: string, bg: string, fg: string): void {
+  ctx.save();
+  ctx.translate(0, y0);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = fg;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(8, 8, w - 16, h - 16);
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(16, 16, w - 32, h - 32);
+  ctx.fillStyle = fg;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '600 22px Georgia, "Times New Roman", serif';
+  ctx.fillText('H.B.', 58, h / 2 + 1);
+  ctx.fillText('H.B.', w - 58, h / 2 + 1);
+  ctx.font = 'italic 600 46px Georgia, "Times New Roman", serif';
+  ctx.fillText(name, w / 2, h / 2 + 3, w - 150);
+  ctx.restore();
+}
+
+/**
+ * Hand-painted name boards for every houseboat, stacked in one texture so all
+ * the boards share a single material (and draw call). Row i spans
+ * v = 1 - (i + 1) / n .. 1 - i / n.
+ */
+export function createNameBoardAtlas(boards: { name: string; bg: string; fg: string }[]): THREE.CanvasTexture {
   const w = 512;
   const h = 112;
   const canvas = document.createElement('canvas');
   canvas.width = w;
-  canvas.height = h;
+  canvas.height = h * boards.length;
   const ctx = canvas.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = fg;
-    ctx.lineWidth = 4;
-    ctx.strokeRect(8, 8, w - 16, h - 16);
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(16, 16, w - 32, h - 32);
-    ctx.fillStyle = fg;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '600 22px Georgia, "Times New Roman", serif';
-    ctx.fillText('H.B.', 58, h / 2 + 1);
-    ctx.fillText('H.B.', w - 58, h / 2 + 1);
-    ctx.font = 'italic 600 46px Georgia, "Times New Roman", serif';
-    ctx.fillText(name, w / 2, h / 2 + 3, w - 150);
-  }
+  if (ctx) boards.forEach((b, i) => drawNameBoard(ctx, i * h, w, h, b.name, b.bg, b.fg));
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;

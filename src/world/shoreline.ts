@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { TextureLibrary } from '../assets/textureLibrary';
 import { Rng } from '../core/math';
 import type { QualitySettings } from '../core/quality';
-import { crossedCards, foliageMaterial, instanced, stoneGeometry, type Instance } from './foliage';
+import { NO_REFLECT } from '../core/layers';
+import { crossedCards, foliageMaterial, instancedCells, stoneGeometry, type Instance } from './foliage';
 import { lakeSdf, lakeSdfGradient, NISHAT, SHORE, terrainHeight } from './layout';
 
 // Softens the natural (non-Boulevard) shoreline: reeds standing in the shallows,
@@ -64,18 +65,17 @@ export function buildShoreFringe(q: QualitySettings, lib: TextureLibrary): THREE
   }
 
   const a2c = high;
-  const grassMesh = instanced(crossedCards(3), foliageMaterial(lib.grass, 0.07, a2c), grass);
-  const reedMesh = instanced(crossedCards(3), foliageMaterial(lib.reed, 0.09, a2c), reeds);
-  grassMesh.receiveShadow = true;
-  reedMesh.receiveShadow = true;
+  const k = high ? 1 : 0.7;
   const stoneMat = new THREE.MeshStandardMaterial({
     map: lib.rock.map,
     normalMap: lib.rock.normalMap,
     roughness: 0.92,
   });
-  const stoneMesh = instanced(stoneGeometry(5), stoneMat, stones);
-  stoneMesh.castShadow = true;
-  stoneMesh.receiveShadow = true;
-  group.add(grassMesh, reedMesh, stoneMesh);
+  // Culled cells with draw distances; bank grass skips the reflection pass.
+  group.add(
+    instancedCells(crossedCards(3), foliageMaterial(lib.grass, 0.07, a2c), grass, { cell: 150, far: 170 * k, layer: NO_REFLECT }),
+    instancedCells(crossedCards(3), foliageMaterial(lib.reed, 0.09, a2c), reeds, { cell: 150, far: 280 * k }),
+    instancedCells(stoneGeometry(5), stoneMat, stones, { cell: 150, far: 150 * k, castShadow: true }),
+  );
   return group;
 }

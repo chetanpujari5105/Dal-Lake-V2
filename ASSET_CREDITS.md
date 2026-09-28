@@ -8,10 +8,10 @@ All four sets are from [Poly Haven](https://polyhaven.com), released under **CC0
 
 | Files | Asset | Creator | Source | Licence | Used for |
 | --- | --- | --- | --- | --- | --- |
-| `dark_planks_diff.webp`, `dark_planks_nor_gl.webp`, `dark_planks_rough.webp` | Dark Planks | Rob Tuytel | https://polyhaven.com/a/dark_planks | CC0 | Shikara hull, rails, carved trim |
-| `brown_planks_07_diff.webp`, `brown_planks_07_nor_gl.webp` | Brown Planks 07 | Rob Tuytel | https://polyhaven.com/a/brown_planks_07 | CC0 | Shikara decks, paddle, flower baskets |
+| `dark_planks_diff.webp`, `dark_planks_nor_gl.webp`, `dark_planks_rough.webp` | Dark Planks | Rob Tuytel | https://polyhaven.com/a/dark_planks | CC0 | Shikara hull, rails, carved trim; houseboat hulls |
+| `brown_planks_07_diff.webp`, `brown_planks_07_nor_gl.webp` | Brown Planks 07 | Rob Tuytel | https://polyhaven.com/a/brown_planks_07 | CC0 | Shikara decks, paddle, flower baskets; houseboat cabins and carving (triplanar) |
 | `brown_mud_rocks_01_diff.webp`, `brown_mud_rocks_01_nor_gl.webp` | Brown Mud Rocks 01 | Rob Tuytel | https://polyhaven.com/a/brown_mud_rocks_01 | CC0 | Floating-garden beds |
-| `rock_boulder_dry_diff.webp`, `rock_boulder_dry_nor_gl.webp` | Rock Boulder Dry | Dimitrios Savva (photography), Rico Cilliers (processing) | https://polyhaven.com/a/rock_boulder_dry | CC0 | Shoreline stones |
+| `rock_boulder_dry_diff.webp`, `rock_boulder_dry_nor_gl.webp` | Rock Boulder Dry | Dimitrios Savva (photography), Rico Cilliers (processing) | https://polyhaven.com/a/rock_boulder_dry | CC0 | Shoreline stones; dressed stone of the fort, ghat, Char Chinar and Nishat Bagh (triplanar); Boulevard wall and paving relief |
 
 Licence text: https://creativecommons.org/publicdomain/zero/1.0/ and https://polyhaven.com/license
 
@@ -23,7 +23,9 @@ These are not third-party assets:
 
 - **Canvas-painted textures:** canopy fabrics (paisley and blossom motifs in four colourways), embroidered valance borders, namda-style carpet, wool for the pheran, grass, reed and collard-leaf alpha cards, and houseboat name boards (`src/assets/textureLibrary.ts`, `src/assets/textures.ts`).
 - **Geometry:** shikara hull, canopy, cushions, boatman and paddle (`src/world/shikaraModel.ts`); floating-garden beds and plants (`src/world/gardens.ts`); shoreline reeds, grass and stones (`src/world/shoreline.ts`, `src/world/foliage.ts`); and the rest of the scene.
-- **Water ripple map:** generated from summed sine waves (`src/assets/textures.ts`).
+- **Water ripple map:** generated from summed sine waves (`src/assets/textures.ts`). The shore-distance map for the shallows is computed from the lake outline (`src/world/water.ts`).
+- **Trees:** leaf-cluster, needle and willow-strand card atlas and the painted far-tree impostor atlas (`src/world/trees.ts`).
+- **Buildings:** corrugated tin, brick with timber lacing, lime plaster, lawn (`src/assets/surfaces.ts`); ashlar and flagstone for the Boulevard (`src/world/terrain.ts`); the houseboat name-board atlas (`src/assets/textures.ts`).
 - **Ambient sound:** synthesised with the Web Audio API; see **Audio** below.
 
 ## Audio

@@ -14,11 +14,13 @@ import { Music } from './audio/music';
 import { CameraRig, type CameraMode } from './camera/cameraRig';
 import { BoatController } from './controls/boatController';
 import { Input } from './controls/input';
+import { updateCells } from './core/cells';
+import { NO_REFLECT } from './core/layers';
 import { AdaptiveQuality, detectQuality, detectTouch, type QualitySettings } from './core/quality';
 import { createRenderer, watchResize } from './core/renderer';
 import { UI } from './ui/ui';
 import { FlowerBoats } from './world/flowerBoats';
-import { buildHouseboat, createHouseboatMaterials, type HouseboatInstance, type HouseboatMaterials } from './world/houseboat';
+import { buildHouseboat, createHouseboatMaterials, mergeHouseboats, type HouseboatInstance, type HouseboatMaterials, type HouseboatRow } from './world/houseboat';
 import { HOUSEBOATS, LANDMARKS, OBSTACLES, SPAWN } from './world/layout';
 import { buildProps } from './world/props';
 import { PlayerShikara } from './world/shikara';
@@ -28,8 +30,6 @@ import { buildEmbankment, buildTerrain } from './world/terrain';
 import { Forest } from './world/vegetation';
 import { Water } from './world/water';
 
-/** Objects on this layer are drawn normally but skipped by the reflection pass. */
-const NO_REFLECT = 1;
 const SOUND_KEY = 'dal-lake:sound';
 
 export class App {
@@ -55,7 +55,9 @@ export class App {
   private birds!: Birds;
   private flowerBoats!: FlowerBoats;
   private forest!: Forest;
+  private lods: { update(cam: THREE.Vector3): void }[] = [];
   private houseboats: HouseboatInstance[] = [];
+  private houseboatRows: HouseboatRow[] = [];
   private houseboatMats!: HouseboatMaterials;
   private textures!: TextureLibrary;
   private boatMats!: ShikaraMaterials;
@@ -68,6 +70,7 @@ export class App {
   private target: AtmosState = createState();
 
   private clock = 0;
+  private shadowFrame = 0;
   private last = 0;
   private running = false;
   private started = false;
@@ -198,8 +201,10 @@ export class App {
             HOUSEBOATS.forEach((h, i) => {
               const hb = buildHouseboat(h, i, this.houseboatMats);
               this.houseboats.push(hb);
-              scene.add(hb.group);
             });
+            const merged = mergeHouseboats(this.houseboats);
+            this.houseboatRows = merged.rows;
+            scene.add(merged.group);
           },
         },
         {
@@ -208,6 +213,7 @@ export class App {
           run: () => {
             const props = buildProps(q, this.houseboatMats, this.boatMats, this.textures);
             scene.add(props.group);
+            this.lods.push(...props.lods);
             scene.add(buildShoreFringe(q, this.textures));
             this.forest = new Forest(q, props, this.renderer);
             scene.add(this.forest.group);
@@ -406,11 +412,7 @@ export class App {
     // Camera.
     this.rig.update(dt, { x: this.controller.x, z: this.controller.z, heading: this.controller.heading, speed: this.controller.forwardSpeed }, s.sunDir);
 
-    // Level of detail: trees swap between models and impostors; houseboat fretwork drops out far away.
-    this.camera.updateMatrixWorld();
-    this.forest.update(this.camera);
-    const cam = this.camera.position;
-    for (const hb of this.houseboats) hb.detail.visible = cam.distanceToSquared(hb.group.position) < 230 * 230;
+    this.refreshLod();
 
     // Lights, sky, water and particles.
     this.focus.set(this.controller.x, 0, this.controller.z);
@@ -433,6 +435,23 @@ export class App {
       if (this.activeTime > 8 || this.journeyTime > 30) this.ui.fadeHint();
       this.updateLandmarks(dt);
     }
+  }
+
+  /**
+   * Level of detail for the current camera: trees swap between models and
+   * impostors, foliage cells beyond their draw distance hide, and houseboat
+   * carving and ghat boats drop to simpler forms far away.
+   */
+  refreshLod(): void {
+    this.camera.updateMatrixWorld();
+    this.forest.update(this.camera);
+    updateCells(this.camera);
+    const cam = this.camera.position;
+    for (const row of this.houseboatRows) {
+      const dz = Math.max(row.z0 - cam.z, 0, cam.z - row.z1);
+      row.detail.visible = Math.hypot(row.x - cam.x, dz) < 150;
+    }
+    this.lods.forEach((l) => l.update(cam));
   }
 
   private updateLandmarks(dt: number): void {
@@ -476,7 +495,10 @@ export class App {
 
   private render(): void {
     const r = this.renderer;
-    if (this.lighting.sun.castShadow) r.shadowMap.needsUpdate = true;
+    // The sun is fixed and the boat slow, so the shadow map refreshes at half rate
+    // (a one-frame lag is invisible); the reflection pass reuses it either way.
+    this.shadowFrame++;
+    if (this.lighting.sun.castShadow && (this.shadowFrame & 1) === 0) r.shadowMap.needsUpdate = true;
     // The reflection target is linear and not tone mapped, so it takes the raw fog colour.
     if (this.water.reflectionsEnabled) {
       this.fog.color.copy(this.state.fogColor);

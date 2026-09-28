@@ -46,7 +46,6 @@ export class Forest {
   private trees: Tree[] = [];
   private models: SpeciesModel[] = [];
   private near: THREE.InstancedMesh[] = [];
-  private far!: THREE.InstancedMesh;
   private isNear!: Uint8Array;
   private matrices!: Float32Array;
   private frustum = new THREE.Frustum();
@@ -81,12 +80,16 @@ export class Forest {
       this.group.add(mesh);
     });
 
-    // Far impostors: one instanced mesh for all species.
+    // Far impostors: every species shares one material, split into spatial cells
+    // (each a contiguous run of the tree list) so cells off-screen are culled.
+    const CELL = 700;
+    const key = (t: Tree) => Math.floor(t.x / CELL) * 10000 + Math.floor(t.z / CELL);
+    this.trees.sort((p, q) => key(p) - key(q));
     const n = this.trees.length;
-    const geo = impostorGeometry();
-    const slots = new Float32Array(n);
-    this.far = new THREE.InstancedMesh(geo, impMat, n);
+    const base = impostorGeometry();
     this.matrices = new Float32Array(n * 16);
+    this.farMatrices = new Float32Array(n * 16);
+    this.cellOf = new Uint16Array(n);
     const m = new THREE.Matrix4();
     const q4 = new THREE.Quaternion();
     const sc = new THREE.Vector3();
@@ -97,22 +100,38 @@ export class Forest {
       m.compose(pos.set(t.x, t.y, t.z), q4, sc.setScalar(t.s));
       m.toArray(this.matrices, i * 16);
       // Impostor quads are 1 x IMP_ASPECT; scale them to the species' height.
-      const h = (model.height * t.s) / IMP_ASPECT;
-      m.compose(pos, q4, sc.setScalar(h));
-      this.far.setMatrixAt(i, m);
-      this.far.setColorAt(i, t.color);
-      slots[i] = model.slot;
+      m.compose(pos, q4, sc.setScalar((model.height * t.s) / IMP_ASPECT));
+      m.toArray(this.farMatrices, i * 16);
     });
-    geo.setAttribute('aSlot', new THREE.InstancedBufferAttribute(slots, 1));
-    this.farMatrices = new Float32Array(this.far.instanceMatrix.array as Float32Array);
-    this.far.frustumCulled = false;
-    this.far.receiveShadow = true;
-    this.far.name = 'trees-impostors';
-    this.group.add(this.far);
+    let start = 0;
+    while (start < n) {
+      let end = start + 1;
+      while (end < n && key(this.trees[end]) === key(this.trees[start])) end++;
+      const geo = new THREE.BufferGeometry();
+      for (const name of Object.keys(base.attributes)) geo.setAttribute(name, base.getAttribute(name));
+      geo.setIndex(base.index);
+      const slots = new Float32Array(end - start);
+      const mesh = new THREE.InstancedMesh(geo, impMat, end - start);
+      for (let i = start; i < end; i++) {
+        (mesh.instanceMatrix.array as Float32Array).set(this.farMatrices.subarray(i * 16, i * 16 + 16), (i - start) * 16);
+        mesh.setColorAt(i - start, this.trees[i].color);
+        slots[i - start] = this.models[this.trees[i].sp].slot;
+        this.cellOf[i] = this.farCells.length;
+      }
+      geo.setAttribute('aSlot', new THREE.InstancedBufferAttribute(slots, 1));
+      mesh.computeBoundingSphere();
+      mesh.receiveShadow = true;
+      mesh.name = 'trees-impostors';
+      this.farCells.push({ mesh, start, lo: Infinity, hi: -1 });
+      this.group.add(mesh);
+      start = end;
+    }
     this.isNear = new Uint8Array(n);
   }
 
-  private farMatrices: Float32Array;
+  private farCells: { mesh: THREE.InstancedMesh; start: number; lo: number; hi: number }[] = [];
+  private cellOf!: Uint16Array;
+  private farMatrices!: Float32Array;
 
   get count(): number {
     return this.trees.length;
@@ -126,11 +145,7 @@ export class Forest {
     this.frustum.setFromProjectionMatrix(this.projView);
     const nearIn = this.nearR * this.nearR;
     const nearOut = (this.nearR * 1.08) ** 2;
-    const farArr = this.far.instanceMatrix.array as Float32Array;
     const zero = this.zero.elements;
-    let changed = 0;
-    let lo = Infinity;
-    let hi = -1;
     for (const mesh of this.near) mesh.count = 0;
 
     for (let i = 0; i < this.trees.length; i++) {
@@ -143,10 +158,11 @@ export class Forest {
       if (nowNear !== wasNear) {
         this.isNear[i] = nowNear ? 1 : 0;
         const src = nowNear ? zero : this.farMatrices.subarray(i * 16, i * 16 + 16);
-        farArr.set(src, i * 16);
-        changed++;
-        lo = Math.min(lo, i);
-        hi = Math.max(hi, i);
+        const cell = this.farCells[this.cellOf[i]];
+        const local = i - cell.start;
+        (cell.mesh.instanceMatrix.array as Float32Array).set(src, local * 16);
+        cell.lo = Math.min(cell.lo, local);
+        cell.hi = Math.max(cell.hi, local);
       }
       if (!nowNear) continue;
       const model = this.models[t.sp];
@@ -168,13 +184,17 @@ export class Forest {
       mesh.instanceColor!.addUpdateRange(0, mesh.count * 3);
       mesh.instanceColor!.needsUpdate = true;
     }
-    if (changed) {
-      const attr = this.far.instanceMatrix;
+    for (const cell of this.farCells) {
+      if (cell.hi < 0) continue;
+      const attr = cell.mesh.instanceMatrix;
       attr.clearUpdateRanges();
-      attr.addUpdateRange(lo * 16, (hi - lo + 1) * 16);
+      attr.addUpdateRange(cell.lo * 16, (cell.hi - cell.lo + 1) * 16);
       attr.needsUpdate = true;
+      cell.lo = Infinity;
+      cell.hi = -1;
     }
   }
+
 
   // -------------------------------------------------------------------------
 
