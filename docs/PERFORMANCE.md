@@ -16,11 +16,18 @@ The Stage 1 report used a different window size (801k triangles / 172 calls in t
 | --- | --- | --- | --- | --- | --- |
 | Stage 1 (`bfcc896`) | 758k | 164 | 60 | 178 | 9.9 ms |
 | Stage 2 | 936k | 199 | 60 | 142 | 12.4 ms |
+| Stage 3 | 936k | 199 | 60 | 141 | 12.7 ms |
 
 | Build | Simulated-mobile triangles | Draw calls | FPS (vsync, laptop GPU) |
 | --- | --- | --- | --- |
 | Stage 1 | 359k | 127 | 60 |
 | Stage 2 | 446k | 157 | 60 |
+| Stage 3 | 446k | 157 | 60 |
+
+Stage 3 changed shaders and lighting rather than geometry.
+- **Water shader:** gust patches, wake calm, multi-scale rain, a baked shore-distance map, and a 3-tap reflection blur on the high tier only. It costs about 1 fps uncapped.
+- **Low tier:** skips the third rain layer and the reflection blur.
+- **Foliage:** switching to Lambert made it slightly cheaper.
 
 ## Other views (desktop, main pass)
 

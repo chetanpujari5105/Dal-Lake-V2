@@ -645,12 +645,13 @@ export function impostorGeometry(): THREE.BufferGeometry {
 // ---------------------------------------------------------------------------
 // Materials
 
-function patchCommon(shader: THREE.WebGLProgramParametersWithUniforms, sway: string): void {
+function patchCommon(shader: THREE.WebGLProgramParametersWithUniforms, sway: string, keepBackNormals = true): void {
   shader.uniforms.uTime = sharedUniforms.uTime;
   shader.uniforms.uWind = sharedUniforms.uWind;
   shader.vertexShader = `uniform float uTime;\nuniform float uWind;\n${shader.vertexShader}`
     .replace('#include <begin_vertex>', `#include <begin_vertex>\n${sway}`);
-  // Double-sided cards keep the crown normal on both faces; no dark backsides.
+  // Double-sided cards keep the crown normal on both faces (no dark backsides).
+  if (!keepBackNormals) return;
   shader.fragmentShader = shader.fragmentShader.replace(
     '#include <normal_fragment_begin>',
     THREE.ShaderChunk.normal_fragment_begin.split('normal *= faceDirection;').join('').split('normal = normal * faceDirection;').join(''),
@@ -658,8 +659,9 @@ function patchCommon(shader: THREE.WebGLProgramParametersWithUniforms, sway: str
 }
 
 /** Near trees: vertex AO x per-instance tint (leaves only) x card atlas (leaves only). */
-export function treeCardMaterial(map: THREE.Texture, alphaToCoverage: boolean): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ map, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.92, metalness: 0 });
+export function treeCardMaterial(map: THREE.Texture, alphaToCoverage: boolean): THREE.MeshLambertMaterial {
+  // Lambert: foliage has no useful specular, and Standard's grazing sheen made backlit crowns glow.
+  const mat = new THREE.MeshLambertMaterial({ map, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide });
   mat.alphaToCoverage = alphaToCoverage;
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -699,12 +701,15 @@ export function treeCardMaterial(map: THREE.Texture, alphaToCoverage: boolean): 
 }
 
 /** Far impostors: one draw call for every species; aSlot picks the atlas column. */
-export function impostorMaterial(map: THREE.Texture): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
+export function impostorMaterial(map: THREE.Texture): THREE.MeshLambertMaterial {
+  const mat = new THREE.MeshLambertMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide });
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aSlot;')
-      .replace('#include <uv_vertex>', `#include <uv_vertex>\n#ifdef USE_MAP\n vMapUv = vec2((aSlot + uv.x) * ${SLOT_W.toFixed(6)}, uv.y);\n#endif`);
+      .replace('#include <uv_vertex>', `#include <uv_vertex>\n#ifdef USE_MAP\n vMapUv = vec2((aSlot + uv.x) * ${SLOT_W.toFixed(6)}, uv.y);\n#endif`)
+      // Lean the rounded normals toward the viewer so a backlit forest stays dark
+      // instead of rim-lighting every billboard.
+      .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalize(mix(transformedNormal, vec3(0.0, 0.25, 1.0), 0.55));');
     patchCommon(
       shader,
       `vec2 ip = instanceMatrix[3].xz;

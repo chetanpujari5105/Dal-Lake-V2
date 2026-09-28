@@ -179,6 +179,8 @@ export const OBSTACLES: Obstacle[] = [
   ...HOUSEBOATS.map((h): Obstacle => ({ kind: 'box', x: h.x, z: h.z, hx: h.length / 2 + 0.4, hz: 3.5, rot: 0, height: 5.5 })),
   ...GARDEN_PLOTS.map((p): Obstacle => ({ kind: 'box', x: p.x, z: p.z, hx: p.w / 2, hz: p.l / 2, rot: p.rot, height: 1.2 })),
   { kind: 'circle', x: CHAR_CHINAR.x, z: CHAR_CHINAR.z, r: CHAR_CHINAR.r + 0.8, height: 3 },
+  // The Boulevard embankment wall, whose face stands just out in the lake.
+  { kind: 'box', x: BOULEVARD_X - 0.3, z: -21, hx: 0.8, hz: 207, rot: 0, height: 1.6 },
   { kind: 'box', x: BOULEVARD_X - 7, z: (GHAT.z0 + GHAT.z1) / 2, hx: 7.5, hz: (GHAT.z1 - GHAT.z0) / 2, rot: 0, height: 2.5 },
 ];
 
@@ -195,6 +197,9 @@ export function terrainHeight(x: number, z: number): number {
   // Boulevard promenade: flat stone walk behind the embankment.
   const prom = smoothstep(212, 216, x) * (1 - smoothstep(244, 252, x)) * (1 - smoothstep(250, 290, Math.abs(z)));
   h = lerp(h, 1.25, prom);
+  // Behind the embankment wall the ground stays under water until it is hidden
+  // beneath the paving, so no terrain triangle can show in front of the wall face.
+  if (x > 205 && z > -232 && z < 190) h = lerp(h, -0.6, 1 - smoothstep(221, 223, x));
 
   // Zabarwan foothills rising behind the Boulevard.
   const east = smoothstep(250, 540, x);

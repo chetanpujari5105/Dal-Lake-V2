@@ -268,7 +268,8 @@ function paintStone(kind: 'ashlar' | 'flags'): THREE.CanvasTexture {
 export function buildEmbankment(lib: TextureLibrary): THREE.Group {
   const group = new THREE.Group();
   group.name = 'boulevard';
-  const x = BOULEVARD_X - 0.2;
+  // The face stands a metre out into the lake so the terrain grid behind it never pokes through.
+  const x = BOULEVARD_X - 1.1;
   const runs: [number, number][] = [[-228, GHAT.z0 - 0.5], [GHAT.z1 + 0.5, 186]];
   const wall: THREE.BufferGeometry[] = [];
   const coping: THREE.BufferGeometry[] = [];
@@ -279,11 +280,11 @@ export function buildEmbankment(lib: TextureLibrary): THREE.Group {
     // Wall face toward the lake (-x), from below the waterline to the coping.
     wall.push(plane(len, 2.9, 2.2, composeMatrix(x, 0.05, zc, 0, -Math.PI / 2)));
     // Coping stone: top and lake-facing lip.
-    coping.push(plane(len, 1.3, 1.6, composeMatrix(x + 0.55, 1.52, zc, -Math.PI / 2, -Math.PI / 2)));
+    coping.push(plane(len, 2.4, 1.6, composeMatrix(x + 1.1, 1.52, zc, -Math.PI / 2, -Math.PI / 2)));
     coping.push(plane(len, 0.18, 1.6, composeMatrix(x - 0.1, 1.43, zc, 0, -Math.PI / 2)));
   }
   // Paved walk behind the wall (continuous; the ghat steps cut into it at the front).
-  paving.push(plane(412, 9, 2.4, composeMatrix(x + 5.7, 1.36, -21, -Math.PI / 2, -Math.PI / 2)));
+  paving.push(plane(412, 9, 2.4, composeMatrix(x + 6.8, 1.36, -21, -Math.PI / 2, -Math.PI / 2)));
 
   const ashlar = paintStone('ashlar');
   const flags = paintStone('flags');
@@ -301,8 +302,8 @@ export function buildEmbankment(lib: TextureLibrary): THREE.Group {
   const posts = new MeshBuilder(71);
   for (let z = -226; z <= 184; z += 4) {
     if (z > GHAT.z0 - 1 && z < GHAT.z1 + 1) continue;
-    posts.cyl(0.07, 0.09, 0.55, 8, x + 0.9, 1.84, z, '#2b2b29');
-    posts.sphere(0.08, 1, x + 0.9, 2.14, z, '#2b2b29');
+    posts.cyl(0.07, 0.09, 0.55, 8, x + 0.6, 1.84, z, '#2b2b29');
+    posts.sphere(0.08, 1, x + 0.6, 2.14, z, '#2b2b29');
   }
   const postMesh = new THREE.Mesh(posts.build(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.5 }));
   postMesh.castShadow = true;

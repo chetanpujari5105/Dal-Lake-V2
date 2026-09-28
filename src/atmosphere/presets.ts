@@ -33,10 +33,10 @@ const DEFS: Record<TimeOfDay, Def> = {
   sunset: {
     colors: {
       skyTop: '#4d6fa3', skyHorizon: '#f2b07a', skyGlow: '#ff9446', sunColor: '#ffb066',
-      hemiSky: '#a9b8d2', hemiGround: '#6a4c33', fogColor: '#e2b490', waterDeep: '#1e3a40', landTint: '#3b3528',
+      hemiSky: '#b4bfd4', hemiGround: '#7d5c40', fogColor: '#e2b490', waterDeep: '#1e3a40', landTint: '#3b3528',
     },
     numbers: {
-      sunIntensity: 3.1, hemiIntensity: 0.95, fogDensity: 0.00036, exposure: 0.92, waterSpec: 1, stars: 0, moon: 0,
+      sunIntensity: 3.0, hemiIntensity: 1.25, fogDensity: 0.00036, exposure: 1.0, waterSpec: 1, stars: 0, moon: 0,
       sunDisc: 1, clouds: 0.55, lantern: 0.18, mist: 0, dust: 1, fireflies: 0, birds: 1, rain: 0, wind: 1,
     },
     sunDir: [-0.93, 0.12, -0.34],
@@ -44,14 +44,15 @@ const DEFS: Record<TimeOfDay, Def> = {
   // Dawn: soft light over the Zabarwan range, a still lake under low mist.
   dawn: {
     colors: {
-      skyTop: '#7e9bc0', skyHorizon: '#efcdb8', skyGlow: '#ffc49a', sunColor: '#ffd3ad',
-      hemiSky: '#bac7d9', hemiGround: '#5e5a52', fogColor: '#d6d3d2', waterDeep: '#2c4551', landTint: '#6c6b68',
+      skyTop: '#7b98c4', skyHorizon: '#e9d2c4', skyGlow: '#ffbf94', sunColor: '#ffd6b0',
+      hemiSky: '#b8c6dc', hemiGround: '#5e5a52', fogColor: '#d9d3d1', waterDeep: '#2c4551', landTint: '#626a70',
     },
     numbers: {
-      sunIntensity: 1.6, hemiIntensity: 1.05, fogDensity: 0.0031, exposure: 1.0, waterSpec: 0.6, stars: 0, moon: 0,
-      sunDisc: 0.7, clouds: 0.3, lantern: 0.06, mist: 1, dust: 0.45, fireflies: 0, birds: 0.8, rain: 0, wind: 0.4,
+      sunIntensity: 2.0, hemiIntensity: 1.05, fogDensity: 0.00085, exposure: 0.98, waterSpec: 0.45, stars: 0, moon: 0,
+      sunDisc: 0.7, clouds: 0.3, lantern: 0.06, mist: 0.75, dust: 0.45, fireflies: 0, birds: 0.8, rain: 0, wind: 0.4,
     },
-    sunDir: [0.88, 0.09, -0.46],
+    // High enough to have cleared the Zabarwan ridge that the dawn sun rises behind.
+    sunDir: [0.84, 0.3, -0.45],
   },
   // Lantern-lit night under a high moon.
   night: {
@@ -67,8 +68,12 @@ const DEFS: Record<TimeOfDay, Def> = {
   },
 };
 
-const RAIN_GREY_DAY = new THREE.Color('#8a9197');
-const RAIN_GREY_NIGHT = new THREE.Color('#2c3646');
+// Overcast greys keep a trace of each time of day: cool at dawn, warm at sunset.
+const RAIN_GREY: Record<TimeOfDay, THREE.Color> = {
+  dawn: new THREE.Color('#8b96a1'),
+  sunset: new THREE.Color('#9c948b'),
+  night: new THREE.Color('#2c3646'),
+};
 
 export function createState(): AtmosState {
   const s = { sunDir: new THREE.Vector3() } as AtmosState;
@@ -86,11 +91,11 @@ export function composeTarget(time: TimeOfDay, weather: Weather, out: AtmosState
   if (weather === 'rain') {
     // Overcast: an even grey dome that meets the fog at the horizon, so distant
     // ridges fade into the cloud instead of standing out lighter than the sky.
-    const grey = time === 'night' ? RAIN_GREY_NIGHT : RAIN_GREY_DAY;
+    const grey = RAIN_GREY[time];
     out.fogColor.lerp(grey.clone().multiplyScalar(1.1), 0.8);
     out.skyHorizon.copy(out.fogColor);
     out.skyTop.lerp(grey, 0.85);
-    out.skyGlow.lerp(grey, 0.8);
+    out.skyGlow.lerp(grey, 0.7);
     out.sunColor.lerp(new THREE.Color('#d8dde2'), 0.6);
     out.sunIntensity *= 0.3;
     out.hemiIntensity *= 1.1;

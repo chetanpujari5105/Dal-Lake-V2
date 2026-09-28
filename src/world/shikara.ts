@@ -25,6 +25,8 @@ export interface SplashEvent {
   strength: number;
   /** Paddle strokes make a sound; wake rings are silent. */
   audible?: boolean;
+  /** A paddle stroke rather than a hull ring: swirls and throws more foam. */
+  paddle?: boolean;
 }
 
 /** The player's boat: model plus bobbing, tilting, paddling and wake emission. */
@@ -138,7 +140,7 @@ export class PlayerShikara {
       // Blade entry: splash on the port side just behind the boatman.
       const px = x - fx * 3.4 + fz * 1.0;
       const pz = z - fz * 3.4 - fx * 1.0;
-      splash({ x: px, z: pz, strength: 0.55 * act, audible: true });
+      splash({ x: px, z: pz, strength: 0.55 * act, audible: true, paddle: true });
     }
 
     // Wake: rings from the stern and bow; slow idle rings from bobbing.

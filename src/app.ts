@@ -384,7 +384,7 @@ export class App {
       this.water.addRipple(contact.x, contact.z, Math.min(1, contact.strength * 0.4));
     }
     this.player.update(dt, t, this.controller, s.lantern, this.reducedMotion, (e) => {
-      this.water.addRipple(e.x, e.z, e.strength);
+      this.water.addRipple(e.x, e.z, e.strength, e.paddle);
       if (e.audible) this.audio.splash(e.strength);
     });
     this.flowerBoats.update(dt, t, this.controller, this.quality.tier === 'high' ? (x, z, st) => this.water.addRipple(x, z, st) : null);
