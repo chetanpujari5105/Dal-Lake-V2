@@ -16,7 +16,7 @@ export const PLAYER_SPEC: ShikaraSpec = {
   flowers: false,
   seed: 9,
   stations: 72,
-  hullTint: '#d39a64',
+  hullTint: '#c68a55',
 };
 
 export interface SplashEvent {

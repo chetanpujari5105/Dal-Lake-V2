@@ -55,6 +55,18 @@ function pbr(set: PBRSet, color: string, roughness: number, extra: THREE.MeshSta
   });
 }
 
+/**
+ * The CC0 plank photos are dark (average linear reflectance ~0.12 for Dark Planks),
+ * so a plain tint multiplies them down to near-black. Scaling the tint above 1
+ * brings the result to varnished-walnut albedo (~0.18, 0.08, 0.02).
+ */
+const WOOD_GAIN = 2.6;
+
+function gain(m: THREE.MeshStandardMaterial, k: number): THREE.MeshStandardMaterial {
+  m.color.multiplyScalar(k);
+  return m;
+}
+
 export function createShikaraMaterials(lib: TextureLibrary): ShikaraMaterials {
   const hullCache = new Map<string, THREE.MeshStandardMaterial>();
   const fabric = {} as Record<FabricKey, THREE.MeshStandardMaterial>;
@@ -71,12 +83,13 @@ export function createShikaraMaterials(lib: TextureLibrary): ShikaraMaterials {
       let m = hullCache.get(tint);
       if (!m) {
         m = pbr(lib.hullWood, tint, 0.8, { side: THREE.DoubleSide, normalScale: new THREE.Vector2(0.9, 0.9) });
+        m.color.multiplyScalar(WOOD_GAIN);
         hullCache.set(tint, m);
       }
       return m;
     },
-    deck: pbr(lib.deckWood, '#d4a57a', 0.85),
-    trim: pbr(lib.hullWood, '#d9a664', 0.55, { normalScale: new THREE.Vector2(0.6, 0.6) }),
+    deck: gain(pbr(lib.deckWood, '#d4a57a', 0.85), 1.6),
+    trim: gain(pbr(lib.hullWood, '#d9a664', 0.55, { normalScale: new THREE.Vector2(0.6, 0.6) }), 2.4),
     fabric,
     valance,
     cushion,
@@ -85,9 +98,9 @@ export function createShikaraMaterials(lib: TextureLibrary): ShikaraMaterials {
     skin: new THREE.MeshStandardMaterial({ color: '#b07b56', roughness: 0.62 }),
     cap: new THREE.MeshStandardMaterial({ map: lib.wool, color: '#f1ece2', roughness: 0.9 }),
     brass: new THREE.MeshStandardMaterial({ color: '#c89b4a', roughness: 0.35, metalness: 0.85 }),
-    paddle: pbr(lib.deckWood, '#9a6a3e', 0.7),
+    paddle: gain(pbr(lib.deckWood, '#9a6a3e', 0.7), 1.8),
     flowers: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 }),
-    wicker: pbr(lib.deckWood, '#c8a26a', 0.9),
+    wicker: gain(pbr(lib.deckWood, '#c8a26a', 0.9), 1.6),
   };
 }
 
@@ -158,7 +171,8 @@ function hullGeometry(L: number, W: number, N: number, M: number): THREE.BufferG
       const b = a + 1;
       const c = a + ring;
       const d = c + 1;
-      idx.push(a, c, b, b, c, d);
+      // Wound so normals face outward: shadow normal-bias must push away from the hull.
+      idx.push(a, b, c, b, d, c);
     }
   }
   const g = new THREE.BufferGeometry();
@@ -193,7 +207,7 @@ function deckGeometry(L: number, W: number, t0: number, t1: number, N: number, i
   for (let i = 0; i < N; i++) {
     for (let j = 0; j < cols; j++) {
       const a = i * (cols + 1) + j;
-      idx.push(a, a + 1, a + cols + 1, a + 1, a + cols + 2, a + cols + 1);
+      idx.push(a, a + cols + 1, a + 1, a + 1, a + cols + 1, a + cols + 2);
     }
   }
   const g = new THREE.BufferGeometry();
