@@ -8,7 +8,11 @@ export interface UIHandlers {
   onSound(on: boolean): void;
   onCamera(mode: CameraMode): void;
   onHide(hidden: boolean): void;
+  onMusicMuted(muted: boolean): void;
+  onMusicVolume(volume: number): void;
 }
+
+export type MusicUIStatus = 'idle' | 'loading' | 'playing' | 'unavailable';
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -37,9 +41,25 @@ export class UI {
   private started = false;
   private sound = true;
   private camera: CameraMode = 'chase';
+  private music = $('#music');
+  private musicBtn = $<HTMLButtonElement>('#music .music-btn');
+  private musicVol = $<HTMLInputElement>('#music .music-vol');
+  private musicNote = $('#music .music-note');
+  private musicStatus: MusicUIStatus = 'idle';
+  private musicReason = '';
+  private musicMuted = false;
 
   constructor(private handlers: UIHandlers, private isTouch: boolean) {
     document.documentElement.classList.toggle('is-touch', isTouch);
+
+    this.musicBtn.addEventListener('click', () => this.toggleMusic());
+    this.musicVol.addEventListener('input', () => {
+      const v = Number(this.musicVol.value) / 100;
+      this.musicVol.setAttribute('aria-valuetext', `${Math.round(v * 100)}%`);
+      // Dragging the volume up un-mutes, as a mixer fader would.
+      if (this.musicMuted && v > 0) this.setMusicMuted(false, true);
+      handlers.onMusicVolume(v);
+    });
 
     this.startBtn.addEventListener('click', () => {
       if (!this.startBtn.disabled) handlers.onStart();
@@ -125,6 +145,45 @@ export class UI {
   toggleSound(): void {
     this.setSound(!this.sound);
     this.handlers.onSound(this.sound);
+  }
+
+  /** Reflects the music player's real state, including when no file is installed. */
+  setMusicStatus(status: MusicUIStatus, reason = ''): void {
+    this.musicStatus = status;
+    this.musicReason = reason;
+    this.music.dataset.status = status;
+    if (status === 'unavailable') {
+      this.musicNote.textContent = 'No music';
+      this.musicBtn.title = `Music unavailable: ${reason} See the README to add a soundtrack.`;
+      // Still operable: pressing it explains why there is no music.
+      this.musicBtn.setAttribute('aria-label', 'Music unavailable. Press for details.');
+      this.musicBtn.setAttribute('aria-pressed', 'false');
+    } else {
+      this.musicNote.textContent = status === 'loading' ? 'Loading…' : '';
+      this.musicBtn.title = 'Music (N)';
+      this.musicBtn.removeAttribute('aria-label');
+      this.musicBtn.setAttribute('aria-pressed', String(!this.musicMuted));
+    }
+  }
+
+  setMusicSettings(volume: number, muted: boolean): void {
+    this.musicVol.value = String(Math.round(volume * 100));
+    this.musicVol.setAttribute('aria-valuetext', `${Math.round(volume * 100)}%`);
+    this.setMusicMuted(muted, false);
+  }
+
+  private setMusicMuted(muted: boolean, notify: boolean): void {
+    this.musicMuted = muted;
+    if (this.musicStatus !== 'unavailable') this.musicBtn.setAttribute('aria-pressed', String(!muted));
+    if (notify) this.handlers.onMusicMuted(muted);
+  }
+
+  toggleMusic(): void {
+    if (this.musicStatus === 'unavailable') {
+      this.showNotice(`Music unavailable: ${this.musicReason}`, 4500);
+      return;
+    }
+    this.setMusicMuted(!this.musicMuted, true);
   }
 
   setCamera(mode: CameraMode): void {

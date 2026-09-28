@@ -334,6 +334,59 @@ kbd {
   color: var(--accent-ink);
 }
 
+/* Music: toggle, volume slider and a plain-words status when no file is installed. */
+.music {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px 0 3px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.music-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.music-btn:hover {
+  color: var(--ink);
+}
+[aria-pressed='true'] > .i-music-off,
+[aria-pressed='false'] > .i-music-on {
+  display: none;
+}
+.music-vol {
+  width: 84px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.music-note {
+  font-size: 12px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.music-note:empty {
+  display: none;
+}
+.music[data-status='unavailable'] .music-vol,
+.music[data-status='loading'] .music-vol {
+  display: none;
+}
+.music[data-status='unavailable'] .music-btn {
+  color: var(--ink-faint);
+  cursor: help;
+}
+
 .controls-hint {
   position: absolute;
   left: calc(16px + var(--safe-l));
@@ -551,6 +604,17 @@ kbd {
   .icon-btn {
     width: 36px;
     height: 36px;
+  }
+  .music {
+    height: 36px;
+    padding-right: 10px;
+  }
+  .music-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .music-vol {
+    width: 64px;
   }
   .caption-title {
     font-size: 24px;

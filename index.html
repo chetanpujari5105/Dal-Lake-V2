@@ -72,6 +72,15 @@
             <svg class="i-sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M17 9l5 6M22 9l-5 6" fill="none" /></svg>
             <span class="sr">Sound</span>
           </button>
+          <div class="music" id="music" role="group" aria-label="Music" data-status="idle">
+            <button type="button" class="music-btn" data-action="music" aria-pressed="true" title="Music (N)">
+              <svg class="i-music-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v12" fill="none" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="16.5" cy="16" r="2.5" /></svg>
+              <svg class="i-music-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v12" fill="none" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="16.5" cy="16" r="2.5" /><path d="M3 3l18 18" fill="none" /></svg>
+              <span class="sr">Music</span>
+            </button>
+            <input type="range" class="music-vol" min="0" max="100" step="1" value="30" aria-label="Music volume" />
+            <span class="music-note" aria-live="polite"></span>
+          </div>
           <button type="button" class="icon-btn" data-action="hide" title="Hide interface (H)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" /><circle cx="12" cy="12" r="2.6" fill="none" /><path d="M4 20L20 4" fill="none" /></svg>
             <span class="sr">Hide interface</span>
@@ -80,7 +89,7 @@
       </div>
 
       <p id="controls-hint" class="controls-hint" hidden>
-        <span class="hint-desktop"><kbd>W</kbd><kbd>S</kbd> paddle · <kbd>A</kbd><kbd>D</kbd> steer · drag to look · <kbd>C</kbd> camera · <kbd>H</kbd> hide UI</span>
+        <span class="hint-desktop"><kbd>W</kbd><kbd>S</kbd> paddle · <kbd>A</kbd><kbd>D</kbd> steer · drag to look · <kbd>C</kbd> camera · <kbd>N</kbd> music · <kbd>H</kbd> hide UI</span>
         <span class="hint-touch">Hold arrows to paddle · drag to look · pinch to zoom</span>
       </p>
 

@@ -40,10 +40,26 @@ WebGL 2 is required. Browsers without it get a clear message instead of a blank 
 | Chase / cinematic camera | `C` | Camera button |
 | Time of day | `1` dawn · `2` sunset · `3` night | Top-right selector |
 | Rain on/off | `R` | Top-right selector |
-| Sound | `M` | Speaker button |
+| Sound (everything) | `M` | Speaker button |
+| Music mute / volume | `N` / slider | Note button / slider |
 | Hide UI | `H` | Eye button (tap the faint eye to restore) |
 
 Steering always swings the bow in the direction pressed, including in reverse, as with a paddle. After you stop dragging, the chase camera drifts back behind the boat.
+
+## Background music (optional)
+
+The project ships **without** a music file. To add one:
+
+1. Use only a track you have the right to publish on the web, such as your own recording, a commissioned piece, or music under a licence that allows it (CC0, CC BY or a purchased web licence). Do not use audio downloaded or extracted from YouTube or other streaming sites.
+2. Save it as MP3 at exactly **`public/audio/soundtrack.mp3`**, creating the `audio` folder. Keep it under about 5 MB; 2–4 minutes at 128–160 kbps is plenty. The file loops with a 3-second crossfade, so it doesn't need a seamless loop point.
+3. Credit it in [ASSET_CREDITS.md](ASSET_CREDITS.md), under **Audio**, using the template there: title, artist, source URL, licence and licence URL, plus any attribution text the licence requires word for word.
+4. Run `npm run build`. Vite copies `public/` into `dist/` as is.
+
+How it behaves:
+- **Start:** music starts only after **Start journey** is clicked, then fades in over 4 seconds at a low default volume (30% on the slider).
+- **Controls:** the note button (or `N`) mutes and unmutes it, and the slider sets its level. Both settings persist for the browser session (`sessionStorage`).
+- **Sound toggle:** the speaker button (or `M`) silences everything, music included.
+- **No file:** if the file is missing or can't be decoded, the music control shows **No music**, and its tooltip and a notice explain why. Everything else keeps working.
 
 ## Architecture
 

@@ -10,6 +10,7 @@ import {
 } from './atmosphere/presets';
 import { Sky } from './atmosphere/sky';
 import { LakeAudio } from './audio/audio';
+import { Music } from './audio/music';
 import { CameraRig, type CameraMode } from './camera/cameraRig';
 import { BoatController } from './controls/boatController';
 import { Input } from './controls/input';
@@ -39,6 +40,7 @@ export class App {
   readonly ui: UI;
   private input = new Input();
   private audio = new LakeAudio();
+  private music = new Music();
   private isTouch = detectTouch();
   private reducedMotion: boolean;
 
@@ -101,6 +103,7 @@ export class App {
       /* storage unavailable */
     }
     this.audio.setEnabled(soundPref);
+    this.music.setSoundOn(soundPref);
 
     this.ui = new UI(
       {
@@ -109,6 +112,7 @@ export class App {
         onWeather: (w) => this.setWeather(w),
         onSound: (on) => {
           this.audio.setEnabled(on);
+          this.music.setSoundOn(on);
           if (on) this.audio.start();
           try {
             localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
@@ -118,10 +122,14 @@ export class App {
         },
         onCamera: (mode) => this.setCamera(mode),
         onHide: (hidden) => (this.uiHidden = hidden),
+        onMusicMuted: (muted) => this.music.setMuted(muted),
+        onMusicVolume: (v) => this.music.setVolume(v),
       },
       this.isTouch,
     );
     this.ui.setSound(soundPref);
+    this.ui.setMusicSettings(this.music.volume, this.music.muted);
+    this.music.onStatus = (status) => this.ui.setMusicStatus(status, this.music.reason);
 
     this.input.onShortcut = (code) => this.shortcut(code);
     this.input.bindButton(this.ui.touchRoot.querySelector('[data-dir="fwd"]')!, 'fwd');
@@ -133,6 +141,7 @@ export class App {
 
     document.addEventListener('visibilitychange', () => {
       this.audio.suspend(document.hidden);
+      this.music.suspend(document.hidden);
       this.last = performance.now();
     });
     canvas.addEventListener('webglcontextlost', (e) => {
@@ -266,6 +275,8 @@ export class App {
     if (this.started) return;
     this.started = true;
     this.audio.start();
+    // Music only ever starts here, from the Start click.
+    void this.music.start();
     this.input.enabled = true;
     this.rig.setMode('chase');
     this.ui.setCamera('chase');
@@ -301,6 +312,9 @@ export class App {
         break;
       case 'KeyM':
         this.ui.toggleSound();
+        break;
+      case 'KeyN':
+        this.ui.toggleMusic();
         break;
       case 'KeyR': {
         const w = this.weather === 'rain' ? 'clear' : 'rain';

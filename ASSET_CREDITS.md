@@ -24,7 +24,16 @@ These are not third-party assets:
 - **Canvas-painted textures:** canopy fabrics (paisley and blossom motifs in four colourways), embroidered valance borders, namda-style carpet, wool for the pheran, grass, reed and collard-leaf alpha cards, and houseboat name boards (`src/assets/textureLibrary.ts`, `src/assets/textures.ts`).
 - **Geometry:** shikara hull, canopy, cushions, boatman and paddle (`src/world/shikaraModel.ts`); floating-garden beds and plants (`src/world/gardens.ts`); shoreline reeds, grass and stones (`src/world/shoreline.ts`, `src/world/foliage.ts`); and the rest of the scene.
 - **Water ripple map:** generated from summed sine waves (`src/assets/textures.ts`).
-- **Audio:** synthesised with the Web Audio API (`src/audio/audio.ts`). There are no audio files.
+- **Ambient sound:** synthesised with the Web Audio API; see **Audio** below.
+
+## Audio
+
+- **Ambience** (lake murmur, hull lapping, paddle splashes, rain, birds, crickets) is synthesised at runtime with the Web Audio API (`src/audio/audio.ts`). There are no ambience files.
+- **Background music:** none is included. The player (`src/audio/music.ts`) loads `public/audio/soundtrack.mp3` only if the site owner adds one; see the README. When you add a track, record it here:
+
+| File | Title | Artist | Source | Licence | Attribution required |
+| --- | --- | --- | --- | --- | --- |
+| `public/audio/soundtrack.mp3` | *(not supplied)* | | | | |
 
 ## Fonts
 
