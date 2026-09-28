@@ -212,7 +212,8 @@ export function terrainHeight(x: number, z: number): number {
   // Surrounding ranges: Zabarwan close to the east, Pir Panjal far to the west.
   const r = Math.hypot(x, z);
   const eastMask = 0.35 + 0.65 * smoothstep(-0.25, 0.75, x / (r + 1));
-  const rid = ridged(x * 0.0017 + 11, z * 0.0017 - 4, 5);
+  // Ridged noise softened with fbm so crests are weathered rather than knife-edged.
+  const rid = ridged(x * 0.0017 + 11, z * 0.0017 - 4, 4) * 0.65 + fbm(x * 0.0021 - 3, z * 0.0021 + 8, 3) * 0.35;
   // Kept low relative to distance (under ~10 degrees of elevation) so the ranges read
   // as a distant backdrop and their reflections stay near the far shore.
   h += smoothstep(800, 2300, r) * (90 + 300 * rid) * eastMask;

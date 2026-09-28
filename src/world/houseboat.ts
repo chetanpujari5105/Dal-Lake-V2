@@ -1,11 +1,15 @@
 import * as THREE from 'three';
+import type { TextureLibrary } from '../assets/textureLibrary';
+import { tinTexture, triplanar } from '../assets/surfaces';
 import { createNameBoard } from '../assets/textures';
-import { MeshBuilder } from '../core/geometry';
+import { composeMatrix, MeshBuilder } from '../core/geometry';
 import { Rng } from '../core/math';
 import type { HouseboatPlacement } from './layout';
 
-// Houseboats are long cedar (deodar) hulls with a cabin of carved panels, a
-// fretwork verandah at the bow, and a painted name board. Local frame: bow at +z.
+// Dal Lake houseboats: a long tarred cedar hull with a raked bow, a walnut and
+// deodar cabin of carved pilasters and arched lattice windows, a fretwork
+// verandah at the bow, a corrugated tin roof (or a railed sun deck) with carved
+// eaves, and a painted name board. Local frame: bow at +z.
 
 const NAMES = [
   'Gul-e-Nargis', 'Shehjar', 'Kongposh', 'Yemberzal', 'Neelofar', 'Bulbul',
@@ -13,23 +17,40 @@ const NAMES = [
 ];
 
 const PALETTES = [
-  { wood: '#6b4226', trim: '#b98251', accent: '#2f4d3c', board: '#5a1a1f', ink: '#e9c983' },
-  { wood: '#5a3824', trim: '#c9a06a', accent: '#6e2a24', board: '#1f3b2d', ink: '#f0dca8' },
-  { wood: '#7a4c2c', trim: '#e6d6b4', accent: '#2c4a63', board: '#2c2a4a', ink: '#f2e2b6' },
-  { wood: '#4e3020', trim: '#a8743f', accent: '#8b3a2a', board: '#6b2224', ink: '#f3d98e' },
+  { wood: '#8a5a3a', trim: '#e7d7b4', accent: '#2f5a44', board: '#5a1a1f', ink: '#e9c983', roof: '#5e8266' },
+  { wood: '#7a4a2e', trim: '#c9965f', accent: '#6e2a24', board: '#1f3b2d', ink: '#f0dca8', roof: '#8e3c2e' },
+  { wood: '#946447', trim: '#f1e8d4', accent: '#2c4a63', board: '#2c2a4a', ink: '#f2e2b6', roof: '#858b8c' },
+  { wood: '#6a4230', trim: '#d4ad76', accent: '#8b3a2a', board: '#6b2224', ink: '#f3d98e', roof: '#4f7560' },
 ];
 
 export interface HouseboatMaterials {
   wood: THREE.MeshStandardMaterial;
+  hull: THREE.MeshStandardMaterial;
+  roof: THREE.MeshStandardMaterial;
   windowLit: THREE.MeshStandardMaterial;
   windowDim: THREE.MeshStandardMaterial;
 }
 
-export function createHouseboatMaterials(): HouseboatMaterials {
+export function createHouseboatMaterials(lib: TextureLibrary): HouseboatMaterials {
+  const wood = triplanar(
+    new THREE.MeshStandardMaterial({ vertexColors: true, map: lib.deckWood.map, roughness: 0.78, metalness: 0 }),
+    2.2, 'hb-wood', 4.2, 0.85,
+  );
+  const hull = triplanar(
+    new THREE.MeshStandardMaterial({ vertexColors: true, map: lib.hullWood.map, roughness: 0.6, metalness: 0 }),
+    2.6, 'hb-hull', 6.5, 0.9,
+  );
+  const tin = tinTexture();
+  const roof = triplanar(
+    new THREE.MeshStandardMaterial({ vertexColors: true, map: tin, roughness: 0.55, metalness: 0.25 }),
+    1.2, 'hb-roof', 1.6, 0.9,
+  );
   return {
-    wood: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, flatShading: true }),
-    windowLit: new THREE.MeshStandardMaterial({ color: '#241a12', emissive: '#ffa04a', emissiveIntensity: 0, roughness: 0.35 }),
-    windowDim: new THREE.MeshStandardMaterial({ color: '#1d1916', emissive: '#ff9540', emissiveIntensity: 0, roughness: 0.35 }),
+    wood,
+    hull,
+    roof,
+    windowLit: new THREE.MeshStandardMaterial({ color: '#2a1d12', emissive: '#ffa04a', emissiveIntensity: 0, roughness: 0.3 }),
+    windowDim: new THREE.MeshStandardMaterial({ color: '#1d1916', emissive: '#ff9540', emissiveIntensity: 0, roughness: 0.3 }),
   };
 }
 
@@ -39,18 +60,93 @@ export interface HouseboatInstance {
   lanterns: THREE.Vector3[]; // world positions
 }
 
+/** Lofted hull: flat bottom, soft bilge, flared sides, sheer rising to a raked bow. */
+function hullGeometry(L: number, W: number, color: string, band: string): THREE.BufferGeometry {
+  const hw = W / 2;
+  const stations = 36;
+  const z0 = -L / 2 - 0.3;
+  const z1 = L / 2 + 1.6;
+  // Half-section profile (x, y) from keel to sheer; last point replaced by sheer height.
+  const prof: [number, number][] = [[0, -0.55], [0.7, -0.58], [0.93, -0.45], [1.0, -0.1], [1.02, 0.42], [1.03, 0.6], [1.03, 0.7], [1.03, 1]];
+  const pos: number[] = [];
+  const col: number[] = [];
+  const idx: number[] = [];
+  const cHull = new THREE.Color(color);
+  const cBand = new THREE.Color(band);
+  const n = prof.length;
+  for (let s = 0; s <= stations; s++) {
+    const z = z0 + ((z1 - z0) * s) / stations;
+    const bow = Math.max(0, (z - (L / 2 - 3.2)) / (z1 - (L / 2 - 3.2)));
+    const stern = Math.max(0, ((-L / 2 + 1.2) - z) / 1.5);
+    const beam = hw * (1 - Math.pow(bow, 1.7) * 0.92) * (1 - stern * 0.12);
+    const sheer = 1.0 + bow * bow * 1.1 + stern * 0.25;
+    const lift = bow * bow * 0.5 + stern * 0.3; // bottom sweeps up at the ends
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < n; i++) {
+        const [px, py] = prof[i];
+        const y = i === n - 1 ? sheer : Math.max(py + lift, py);
+        pos.push(side * px * beam, i === n - 1 ? y : y * (i >= n - 2 ? 1 : 1), z);
+        // A painted band at the waterline strake; tarred wood above and below.
+        const c = i === 4 || i === 5 ? cBand : cHull;
+        col.push(c.r, c.g, c.b);
+      }
+    }
+  }
+  const row = n * 2;
+  for (let s = 0; s < stations; s++) {
+    for (let side = 0; side < 2; side++) {
+      for (let i = 0; i < n - 1; i++) {
+        const a = s * row + side * n + i;
+        const b = a + 1;
+        const c = a + row;
+        const d = c + 1;
+        if (side === 0) idx.push(a, c, b, b, c, d);
+        else idx.push(a, b, c, b, d, c);
+      }
+    }
+  }
+  // Transom at the stern.
+  for (let i = 0; i < n - 1; i++) idx.push(i, n + i, i + 1, i + 1, n + i, n + i + 1);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  const ng = g.toNonIndexed();
+  ng.computeVertexNormals();
+  return ng;
+}
+
+/** Window opening with a round arch head, in the XY plane, centred at the origin. */
+function archShape(w: number, h: number): THREE.Shape {
+  const s = new THREE.Shape();
+  const r = w / 2;
+  s.moveTo(-r, -h / 2);
+  s.lineTo(r, -h / 2);
+  s.lineTo(r, h / 2 - r);
+  s.absarc(0, h / 2 - r, r, 0, Math.PI, false);
+  s.lineTo(-r, -h / 2);
+  return s;
+}
+
+function archFrame(w: number, h: number, t: number): THREE.BufferGeometry {
+  const outer = archShape(w + t * 2, h + t * 2);
+  const hole = archShape(w, h);
+  outer.holes.push(new THREE.Path(hole.getPoints(12)));
+  return new THREE.ShapeGeometry(outer, 10);
+}
+
 export function buildHouseboat(place: HouseboatPlacement, index: number, mats: HouseboatMaterials): HouseboatInstance {
   const rng = new Rng(place.seed);
   const pal = PALETTES[index % PALETTES.length];
   const L = place.length;
   const W = 6.2;
-  const main = new MeshBuilder(place.seed, 0.08);
+  const main = new MeshBuilder(place.seed, 0.06);
   const detail = new MeshBuilder(place.seed + 1, 0.06);
   const lit = new MeshBuilder(place.seed + 2);
   const dim = new MeshBuilder(place.seed + 3);
+  const roofB = new MeshBuilder(place.seed + 4, 0.05);
 
-  const hullDark = '#2b1f17';
-  const deckY = 0.95;
+  const deckY = 1.0;
   const cabinZ0 = -L / 2 + 0.6;
   const cabinZ1 = L / 2 - 5.2;
   const cabinLen = cabinZ1 - cabinZ0;
@@ -58,73 +154,78 @@ export function buildHouseboat(place: HouseboatPlacement, index: number, mats: H
   const cabinTop = 4.0;
   const cw = W - 0.5;
 
-  // Hull and deck.
-  main.box(W, 1.65, L, 0, 0.12, 0, hullDark, 0, 0, 0);
-  main.box(W + 0.04, 0.22, L + 0.04, 0, 0.78, 0, pal.accent);
-  main.box(W - 0.8, 0.9, 1.6, 0, 0.35, L / 2 + 0.6, hullDark, 0, -0.35);
-  main.box(W, 0.1, L, 0, deckY, 0, '#8a6344');
+  // Hull, rub rail and deck.
+  main.box(W - 0.1, 0.12, L - 0.3, 0, deckY, 0.2, '#a0785a');
 
-  // Cabin body, frieze and plinth.
+  // Cabin body with plinth and cornice.
   main.box(cw, cabinTop - deckY, cabinLen, 0, (cabinTop + deckY) / 2, cabinMid, pal.wood);
-  main.box(cw + 0.18, 0.34, cabinLen + 0.18, 0, cabinTop - 0.12, cabinMid, pal.trim);
-  main.box(cw + 0.14, 0.3, cabinLen + 0.14, 0, deckY + 0.18, cabinMid, pal.trim);
+  main.box(cw + 0.22, 0.38, cabinLen + 0.22, 0, cabinTop - 0.14, cabinMid, pal.trim);
+  main.box(cw + 0.16, 0.34, cabinLen + 0.16, 0, deckY + 0.2, cabinMid, pal.trim);
 
-  // Side walls: carved pilasters with windows between them.
-  const bays = Math.max(4, Math.floor(cabinLen / 1.75));
+  // Side walls: carved pilasters with arched windows between them.
+  const bays = Math.max(4, Math.floor(cabinLen / 1.8));
   const bayLen = cabinLen / bays;
+  const winW = bayLen * 0.52;
+  const winH = 1.45;
+  const winY = 2.5;
+  const frame = archFrame(winW, winH, 0.09);
+  const pane = new THREE.ShapeGeometry(archShape(winW, winH), 10);
   for (const side of [-1, 1]) {
     const x = side * (cw / 2);
+    const faceRy = side > 0 ? Math.PI / 2 : -Math.PI / 2;
     for (let i = 0; i <= bays; i++) {
       const z = cabinZ0 + i * bayLen;
-      main.box(0.2, cabinTop - deckY - 0.3, 0.22, x + side * 0.06, (cabinTop + deckY) / 2, z, pal.trim);
+      main.box(0.22, cabinTop - deckY - 0.5, 0.26, x + side * 0.07, (cabinTop + deckY) / 2, z, pal.trim);
+      // Capital and base blocks on each pilaster.
+      detail.box(0.3, 0.16, 0.34, x + side * 0.09, cabinTop - 0.45, z, pal.trim);
+      detail.box(0.3, 0.16, 0.34, x + side * 0.09, deckY + 0.5, z, pal.trim);
     }
     for (let i = 0; i < bays; i++) {
       const z = cabinZ0 + (i + 0.5) * bayLen;
-      main.box(0.08, 1.35, bayLen * 0.66, x + side * 0.04, 2.45, z, pal.trim);
-      const pane = rng.chance(0.6) ? lit : dim;
-      pane.box(0.06, 1.1, bayLen * 0.5, x + side * 0.08, 2.45, z, '#ffffff');
-      // Arched head over each window.
-      main.box(0.1, 0.16, bayLen * 0.4, x + side * 0.08, 3.2, z, pal.trim);
-      // Carved panel under the window: a lattice of crossed slats.
-      detail.box(0.05, 0.55, bayLen * 0.66, x + side * 0.06, 1.45, z, pal.trim);
-      const slats = 4;
-      for (let k = 0; k < slats; k++) {
-        const zz = z - bayLen * 0.3 + ((k + 0.5) / slats) * bayLen * 0.6;
-        detail.box(0.04, 0.5, 0.04, x + side * 0.1, 1.45, zz, pal.wood, 0, 0.6);
-        detail.box(0.04, 0.5, 0.04, x + side * 0.1, 1.45, zz, pal.wood, 0, -0.6);
+      const m = composeMatrix(x + side * 0.03, winY, z, 0, faceRy);
+      (rng.chance(0.6) ? lit : dim).add(pane.clone(), '#ffffff', m);
+      main.add(frame.clone(), pal.trim, composeMatrix(x + side * 0.05, winY, z, 0, faceRy));
+      // Pinjrakari lattice across the lower half of each window.
+      for (let k = 0; k < 5; k++) {
+        const zz = z - winW * 0.4 + (k / 4) * winW * 0.8;
+        detail.box(0.03, winH * 0.5, 0.03, x + side * 0.07, winY - winH * 0.22, zz, pal.trim, 0, 0.55);
+        detail.box(0.03, winH * 0.5, 0.03, x + side * 0.07, winY - winH * 0.22, zz, pal.trim, 0, -0.55);
       }
+      detail.box(0.04, 0.05, winW, x + side * 0.08, winY + 0.02, z, pal.trim);
+      // Carved panel below the window.
+      detail.box(0.05, 0.55, bayLen * 0.62, x + side * 0.05, 1.5, z, pal.trim);
+      detail.box(0.05, 0.4, bayLen * 0.46, x + side * 0.08, 1.5, z, pal.wood);
+      detail.sphere(0.07, 0, x + side * 0.1, 1.5, z, pal.accent);
     }
-    // Dentil band under the frieze.
-    for (let z = cabinZ0 + 0.2; z < cabinZ1; z += 0.36) {
-      detail.box(0.08, 0.1, 0.14, x + side * 0.12, cabinTop - 0.36, z, pal.trim);
-    }
+    // Dentil band under the cornice.
+    for (let z = cabinZ0 + 0.2; z < cabinZ1; z += 0.34) detail.box(0.08, 0.1, 0.14, x + side * 0.14, cabinTop - 0.4, z, pal.trim);
   }
 
-  // Front facade: door flanked by windows.
+  // Front facade: arched door flanked by arched windows.
   const fz = cabinZ1 + 0.02;
-  main.box(1.05, 2.2, 0.1, 0, deckY + 1.1, fz, pal.trim);
-  lit.box(0.8, 1.95, 0.06, 0, deckY + 1.02, fz + 0.04, '#ffffff');
+  lit.add(new THREE.ShapeGeometry(archShape(0.95, 2.2), 10), '#ffffff', composeMatrix(0, deckY + 1.12, fz + 0.03));
+  main.add(archFrame(0.95, 2.2, 0.12), pal.trim, composeMatrix(0, deckY + 1.12, fz + 0.05));
   for (const x of [-1.8, 1.8]) {
-    main.box(1.1, 1.4, 0.1, x, 2.45, fz, pal.trim);
-    lit.box(0.85, 1.15, 0.06, x, 2.45, fz + 0.04, '#ffffff');
+    lit.add(new THREE.ShapeGeometry(archShape(0.9, 1.4), 10), '#ffffff', composeMatrix(x, winY, fz + 0.03));
+    main.add(archFrame(0.9, 1.4, 0.1), pal.trim, composeMatrix(x, winY, fz + 0.05));
   }
-  // Back facade.
-  for (const x of [-1.4, 1.4]) dim.box(0.9, 1.0, 0.06, x, 2.45, cabinZ0 - 0.03, '#ffffff');
+  for (const x of [-1.4, 1.4]) dim.add(new THREE.ShapeGeometry(archShape(0.8, 1.1), 8), '#ffffff', composeMatrix(x, winY, cabinZ0 - 0.03, 0, Math.PI));
 
-  // Verandah: carved pillars, railing with balusters, fretwork valance.
+  // Verandah: turned pillars, railing with balusters, scalloped fretwork valance.
   const vz0 = cabinZ1;
   const vz1 = L / 2 - 0.5;
   const vlen = vz1 - vz0;
-  const roofY = 3.7;
+  const roofY = 3.75;
   const pillars: [number, number][] = [[-W / 2 + 0.25, vz1], [W / 2 - 0.25, vz1], [-W / 2 + 0.25, vz0 + vlen * 0.5], [W / 2 - 0.25, vz0 + vlen * 0.5], [-1.1, vz1], [1.1, vz1]];
   for (const [x, z] of pillars) {
-    main.cyl(0.1, 0.12, roofY - deckY, 8, x, (roofY + deckY) / 2, z, pal.trim);
-    main.box(0.3, 0.14, 0.3, x, deckY + 0.07, z, pal.wood);
-    main.box(0.34, 0.16, 0.34, x, roofY - 0.1, z, pal.wood);
-    detail.sphere(0.13, 0, x, deckY + 1.6, z, pal.trim, 1, 1.4, 1);
+    main.add(new THREE.LatheGeometry(turnedProfile(roofY - deckY), 8), pal.trim, composeMatrix(x, deckY, z));
+    main.box(0.34, 0.14, 0.34, x, deckY + 0.07, z, pal.wood);
+    main.box(0.38, 0.16, 0.38, x, roofY - 0.08, z, pal.wood);
+    // Carved brackets.
+    detail.box(0.08, 0.5, 0.5, x, roofY - 0.4, z - 0.2, pal.trim, 0, Math.PI / 4);
   }
-  main.box(W + 0.5, 0.16, vlen + 0.6, 0, roofY + 0.08, vz0 + vlen / 2 + 0.15, pal.wood);
-  main.box(W + 0.56, 0.1, vlen + 0.66, 0, roofY + 0.2, vz0 + vlen / 2 + 0.15, pal.trim);
+  main.box(W + 0.6, 0.16, vlen + 0.7, 0, roofY + 0.08, vz0 + vlen / 2 + 0.2, pal.wood);
+  main.box(W + 0.66, 0.1, vlen + 0.76, 0, roofY + 0.2, vz0 + vlen / 2 + 0.2, pal.trim);
 
   const railY = deckY + 0.95;
   const railRuns: [number, number, number, number][] = [
@@ -136,67 +237,79 @@ export function buildHouseboat(place: HouseboatPlacement, index: number, mats: H
   for (const [x0, z0, x1, z1] of railRuns) {
     const len = Math.hypot(x1 - x0, z1 - z0);
     const ang = Math.atan2(x1 - x0, z1 - z0);
-    const mx = (x0 + x1) / 2;
-    const mz = (z0 + z1) / 2;
-    main.box(0.1, 0.08, len, mx, railY, mz, pal.trim, ang);
-    main.box(0.08, 0.06, len, mx, deckY + 0.2, mz, pal.trim, ang);
-    const n = Math.floor(len / 0.2);
-    for (let i = 1; i < n; i++) {
-      const f = i / n;
-      detail.box(0.05, 0.7, 0.05, x0 + (x1 - x0) * f, deckY + 0.58, z0 + (z1 - z0) * f, pal.trim);
+    main.box(0.12, 0.08, len, (x0 + x1) / 2, railY, (z0 + z1) / 2, pal.trim, ang);
+    main.box(0.08, 0.06, len, (x0 + x1) / 2, deckY + 0.2, (z0 + z1) / 2, pal.trim, ang);
+    const nb = Math.floor(len / 0.18);
+    for (let i = 1; i < nb; i++) {
+      const f = i / nb;
+      detail.cyl(0.028, 0.035, 0.7, 5, x0 + (x1 - x0) * f, deckY + 0.58, z0 + (z1 - z0) * f, pal.trim);
     }
   }
-  // Zig-zag fretwork valance under the verandah roof.
-  for (let x = -W / 2; x <= W / 2; x += 0.34) {
-    detail.box(0.18, 0.18, 0.04, x, roofY - 0.18, vz1 + 0.38, pal.trim, 0, 0, Math.PI / 4);
+  // Scalloped valance: a row of small arches with drops under the verandah roof.
+  for (let x = -W / 2 + 0.2; x <= W / 2; x += 0.42) {
+    detail.add(new THREE.TorusGeometry(0.2, 0.025, 4, 8, Math.PI), pal.trim, composeMatrix(x, roofY - 0.1, vz1 + 0.42, 0, 0, Math.PI));
+    detail.sphere(0.04, 0, x + 0.21, roofY - 0.24, vz1 + 0.42, pal.trim);
   }
   for (const side of [-1, 1]) {
-    for (let z = vz0; z <= vz1 + 0.3; z += 0.34) {
-      detail.box(0.04, 0.18, 0.18, side * (W / 2 + 0.24), roofY - 0.18, z, pal.trim, 0, Math.PI / 4);
+    for (let z = vz0 + 0.2; z <= vz1 + 0.3; z += 0.42) {
+      detail.add(new THREE.TorusGeometry(0.2, 0.025, 4, 8, Math.PI), pal.trim, composeMatrix(side * (W / 2 + 0.28), roofY - 0.1, z, 0, Math.PI / 2, Math.PI));
     }
   }
 
-  // Roof: either a railed sun deck or a pitched gable.
-  const gable = rng.chance(0.45);
+  // Roof: a corrugated tin gable with carved eaves, or a railed sun deck.
+  const gable = rng.chance(0.55);
   if (gable) {
-    const pitch = 0.42;
-    const half = cw / 2 + 0.35;
+    const pitch = 0.5;
+    const half = cw / 2 + 0.7;
     const slope = half / Math.cos(pitch);
     const rise = Math.tan(pitch) * half;
-    const roofCol = rng.pick(['#3e5a4c', '#5b3b2a', '#6d6f6e']);
-    main.box(slope, 0.12, cabinLen + 0.7, -half / 2, cabinTop + rise / 2 + 0.05, cabinMid, roofCol, 0, 0, pitch);
-    main.box(slope, 0.12, cabinLen + 0.7, half / 2, cabinTop + rise / 2 + 0.05, cabinMid, roofCol, 0, 0, -pitch);
-    for (const z of [cabinZ0 - 0.3, cabinZ1 + 0.3]) {
-      main.tris([-half, cabinTop, z, half, cabinTop, z, 0, cabinTop + rise, z], pal.trim);
+    const rl = cabinLen + 1.2;
+    roofB.box(slope, 0.08, rl, -half / 2, cabinTop + rise / 2 + 0.05, cabinMid, pal.roof, 0, 0, pitch);
+    roofB.box(slope, 0.08, rl, half / 2, cabinTop + rise / 2 + 0.05, cabinMid, pal.roof, 0, 0, -pitch);
+    roofB.box(0.22, 0.14, rl + 0.05, 0, cabinTop + rise + 0.07, cabinMid, pal.roof);
+    for (const z of [cabinZ0 - 0.55, cabinZ1 + 0.55]) {
+      // Gable end: a boarded triangle with a carved sunburst and bargeboards.
+      main.tris([-half + 0.3, cabinTop, z, half - 0.3, cabinTop, z, 0, cabinTop + rise - 0.15, z], pal.wood);
+      main.tris([half - 0.3, cabinTop, z, -half + 0.3, cabinTop, z, 0, cabinTop + rise - 0.15, z], pal.wood);
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 6) * Math.PI;
+        detail.box(0.05, 0.9, 0.04, Math.cos(a) * 0.45, cabinTop + 0.45 + Math.sin(a) * 0.45, z + 0.03 * Math.sign(z), pal.trim, 0, 0, a - Math.PI / 2);
+      }
+      for (const sx of [-1, 1]) detail.box(slope, 0.2, 0.06, sx * half / 2, cabinTop + rise / 2 - 0.05, z + 0.05 * Math.sign(z), pal.trim, 0, 0, -sx * pitch);
+      detail.cyl(0.05, 0.08, 0.7, 6, 0, cabinTop + rise + 0.4, z, pal.trim);
+      detail.sphere(0.12, 1, 0, cabinTop + rise + 0.8, z, pal.trim);
     }
-    main.box(0.12, 0.12, cabinLen + 0.8, 0, cabinTop + rise + 0.05, cabinMid, pal.trim);
+    // Carved eave boards along both sides.
+    for (const sx of [-1, 1]) {
+      for (let z = cabinZ0 - 0.5; z <= cabinZ1 + 0.5; z += 0.36) {
+        detail.box(0.04, 0.22, 0.2, sx * (half - 0.02), cabinTop + 0.05 - 0.08, z, pal.trim, 0, Math.PI / 4);
+      }
+    }
   } else {
-    main.box(cw + 0.3, 0.2, cabinLen + 0.3, 0, cabinTop + 0.1, cabinMid, pal.wood);
+    main.box(cw + 0.4, 0.2, cabinLen + 0.4, 0, cabinTop + 0.1, cabinMid, pal.wood);
     const ry = cabinTop + 0.2;
-    main.box(0.08, 0.06, cabinLen, cw / 2, ry + 0.75, cabinMid, pal.trim);
-    main.box(0.08, 0.06, cabinLen, -cw / 2, ry + 0.75, cabinMid, pal.trim);
-    main.box(cw, 0.06, 0.08, 0, ry + 0.75, cabinZ0, pal.trim);
-    main.box(cw, 0.06, 0.08, 0, ry + 0.75, cabinZ1, pal.trim);
-    for (let z = cabinZ0; z <= cabinZ1; z += 0.3) {
-      detail.box(0.04, 0.7, 0.04, cw / 2, ry + 0.38, z, pal.trim);
-      detail.box(0.04, 0.7, 0.04, -cw / 2, ry + 0.38, z, pal.trim);
+    main.box(0.1, 0.07, cabinLen, cw / 2, ry + 0.78, cabinMid, pal.trim);
+    main.box(0.1, 0.07, cabinLen, -cw / 2, ry + 0.78, cabinMid, pal.trim);
+    main.box(cw, 0.07, 0.1, 0, ry + 0.78, cabinZ0, pal.trim);
+    main.box(cw, 0.07, 0.1, 0, ry + 0.78, cabinZ1, pal.trim);
+    for (let z = cabinZ0; z <= cabinZ1; z += 0.28) {
+      detail.cyl(0.025, 0.03, 0.72, 5, cw / 2, ry + 0.4, z, pal.trim);
+      detail.cyl(0.025, 0.03, 0.72, 5, -cw / 2, ry + 0.4, z, pal.trim);
     }
-    for (let x = -cw / 2; x <= cw / 2; x += 0.3) {
-      detail.box(0.04, 0.7, 0.04, x, ry + 0.38, cabinZ0, pal.trim);
-      detail.box(0.04, 0.7, 0.04, x, ry + 0.38, cabinZ1, pal.trim);
+    for (let x = -cw / 2; x <= cw / 2; x += 0.28) {
+      detail.cyl(0.025, 0.03, 0.72, 5, x, ry + 0.4, cabinZ0, pal.trim);
+      detail.cyl(0.025, 0.03, 0.72, 5, x, ry + 0.4, cabinZ1, pal.trim);
     }
-    // Small awning on the sun deck.
-    main.box(2.4, 0.06, 2.4, 0, ry + 1.9, cabinZ1 - 1.6, pal.accent);
-    for (const [x, z] of [[-1.1, cabinZ1 - 0.5], [1.1, cabinZ1 - 0.5], [-1.1, cabinZ1 - 2.7], [1.1, cabinZ1 - 2.7]]) {
-      main.cyl(0.04, 0.04, 1.9, 5, x, ry + 0.95, z, pal.trim);
+    // Sun-deck awning with a small tin roof.
+    roofB.box(3.0, 0.06, 3.0, 0, ry + 2.0, cabinZ1 - 1.7, pal.roof, 0, 0, 0);
+    for (const [x, z] of [[-1.3, cabinZ1 - 0.4], [1.3, cabinZ1 - 0.4], [-1.3, cabinZ1 - 3.0], [1.3, cabinZ1 - 3.0]]) {
+      main.cyl(0.05, 0.05, 2.0, 6, x, ry + 1.0, z, pal.trim);
     }
   }
 
-  // Side steps down to the water and gangplank to the embankment.
-  for (let i = 0; i < 3; i++) {
-    main.box(0.8, 0.12, 1.2, W / 2 + 0.4 + i * 0.35, deckY - 0.3 - i * 0.28, vz0 + 1.2, '#7b5a3c');
-  }
-  main.box(1.2, 0.1, 3.6, 0, deckY + 0.05, -L / 2 - 1.8, '#7b5a3c');
+  // Side steps down to the water and a gangplank to the embankment.
+  for (let i = 0; i < 3; i++) main.box(0.8, 0.12, 1.2, W / 2 + 0.4 + i * 0.35, deckY - 0.3 - i * 0.28, vz0 + 1.2, '#8b6a4c');
+  main.box(1.2, 0.1, 3.6, 0, deckY + 0.05, -L / 2 - 1.8, '#8b6a4c');
 
   // Hanging lanterns at the verandah corners.
   const lanternsLocal = [new THREE.Vector3(-W / 2 + 0.3, roofY - 0.55, vz1 + 0.1), new THREE.Vector3(W / 2 - 0.3, roofY - 0.55, vz1 + 0.1)];
@@ -206,27 +319,27 @@ export function buildHouseboat(place: HouseboatPlacement, index: number, mats: H
   }
 
   const group = new THREE.Group();
+  const hullMesh = new THREE.Mesh(hullGeometry(L, W, '#3a2c22', pal.accent), mats.hull);
   const mainMesh = new THREE.Mesh(main.build(), mats.wood);
-  mainMesh.castShadow = true;
-  mainMesh.receiveShadow = true;
+  const roofMesh = new THREE.Mesh(roofB.build(), mats.roof);
+  for (const m of [hullMesh, mainMesh, roofMesh]) {
+    m.castShadow = true;
+    m.receiveShadow = true;
+  }
   const detailMesh = new THREE.Mesh(detail.build(), mats.wood);
   detailMesh.castShadow = true;
   const litMesh = new THREE.Mesh(lit.build(), mats.windowLit);
   const dimMesh = new THREE.Mesh(dim.build(), mats.windowDim);
-  group.add(mainMesh, detailMesh, litMesh, dimMesh);
+  group.add(hullMesh, mainMesh, roofMesh, detailMesh, litMesh, dimMesh);
 
   // Painted name board above the verandah.
   const name = NAMES[index % NAMES.length];
   const tex = createNameBoard(name, pal.board, pal.ink);
-  const board = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.8, 0.83),
-    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }),
-  );
-  board.position.set(0, roofY + 0.72, vz1 + 0.42);
-  const boardBack = new THREE.Mesh(new THREE.BoxGeometry(4.0, 1.0, 0.08), mats.wood);
-  boardBack.position.set(0, roofY + 0.72, vz1 + 0.36);
-  colorGeometry(boardBack.geometry, pal.trim);
-  group.add(board, boardBack);
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 0.83), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }));
+  board.position.set(0, roofY + 0.72, vz1 + 0.47);
+  const boardBack = new MeshBuilder(1);
+  boardBack.box(4.05, 1.05, 0.08, 0, roofY + 0.72, vz1 + 0.41, pal.trim);
+  group.add(board, new THREE.Mesh(boardBack.build(), mats.wood));
 
   // Bow faces west, toward the open lake and the setting sun.
   group.rotation.y = -Math.PI / 2;
@@ -237,10 +350,11 @@ export function buildHouseboat(place: HouseboatPlacement, index: number, mats: H
   return { group, detail: detailMesh, lanterns };
 }
 
-function colorGeometry(g: THREE.BufferGeometry, color: string): void {
-  const c = new THREE.Color(color);
-  const n = g.attributes.position.count;
-  const arr = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) c.toArray(arr, i * 3);
-  g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+/** Profile of a turned verandah pillar (radius, height), for a lathe. */
+function turnedProfile(h: number): THREE.Vector2[] {
+  return [
+    new THREE.Vector2(0.001, 0), new THREE.Vector2(0.13, 0), new THREE.Vector2(0.13, 0.12), new THREE.Vector2(0.09, 0.2),
+    new THREE.Vector2(0.075, h * 0.35), new THREE.Vector2(0.11, h * 0.42), new THREE.Vector2(0.075, h * 0.5),
+    new THREE.Vector2(0.07, h * 0.85), new THREE.Vector2(0.12, h * 0.93), new THREE.Vector2(0.14, h), new THREE.Vector2(0.001, h),
+  ];
 }

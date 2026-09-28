@@ -152,7 +152,8 @@ function hullGeometry(L: number, W: number, N: number, M: number): THREE.BufferG
     let prev: [number, number] | null = null;
     const pts: [number, number][] = [];
     for (let j = 0; j < ring; j++) pts.push(sectionPoint(sec, -1 + (2 * j) / (ring - 1)));
-    // v measured from the keel so strakes run symmetrically on both sides.
+    // v measured continuously round the girth (not mirrored at the keel, which
+    // flipped normal-map tangents there and drew a bright seam down the stern).
     const girths: number[] = [];
     for (const p of pts) {
       if (prev) girth += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
@@ -162,7 +163,7 @@ function hullGeometry(L: number, W: number, N: number, M: number): THREE.BufferG
     const mid = girths[M];
     pts.forEach((p, j) => {
       pos.push(p[0], p[1], z);
-      uv.push(z / 2.3, Math.abs(girths[j] - mid) / 1.7);
+      uv.push(z / 2.3, (girths[j] - mid) / 1.7);
     });
   }
   for (let i = 0; i < N; i++) {

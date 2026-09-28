@@ -49,7 +49,7 @@ export function buildShoreFringe(q: QualitySettings, lib: TextureLibrary): THREE
         const x = px + gx * off;
         const z = pz + gz * off;
         if (lakeSdf(x, z) < 0.5) {
-          reeds.push({ x, y: -0.3, z, sx: rng.range(0.55, 0.9), sy: rng.range(1.4, 2.4), ry: rng.next() * 6.3, color: rng.pick(grassTints), tilt: rng.range(-0.08, 0.08) });
+          reeds.push({ x, y: -0.25, z, sx: rng.range(0.9, 1.4), sy: rng.range(0.9, 1.6), ry: rng.next() * 6.3, color: rng.pick(grassTints), tilt: rng.range(-0.12, 0.12) });
         }
       }
       if (rng.chance(high ? 0.22 : 0.12)) {
@@ -65,7 +65,7 @@ export function buildShoreFringe(q: QualitySettings, lib: TextureLibrary): THREE
 
   const a2c = high;
   const grassMesh = instanced(crossedCards(3), foliageMaterial(lib.grass, 0.07, a2c), grass);
-  const reedMesh = instanced(crossedCards(2), foliageMaterial(lib.reed, 0.09, a2c), reeds);
+  const reedMesh = instanced(crossedCards(3), foliageMaterial(lib.reed, 0.09, a2c), reeds);
   grassMesh.receiveShadow = true;
   reedMesh.receiveShadow = true;
   const stoneMat = new THREE.MeshStandardMaterial({

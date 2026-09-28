@@ -45,8 +45,9 @@ function bedGeometry(shape: BedShape, rng: Rng): THREE.BufferGeometry {
   const col: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];
-  const wet = [0.42, 0.38, 0.31];
-  const edge = [0.86, 0.8, 0.68];
+  // Below and at the waterline the bed is weed-covered, olive rather than bare mud.
+  const wet = [0.3, 0.33, 0.2];
+  const edge = [0.72, 0.78, 0.5];
   const heart = [0.7, 0.8, 0.5];
   // Ring 0: skirt below the waterline; rings 1..: domed top; then the centre.
   const rings: { scale: number; y: number; c: number[] }[] = [
@@ -176,15 +177,15 @@ export function buildFloatingGardens(q: QualitySettings, lib: TextureLibrary): T
     const edgeStep = high ? 1 : 2;
     for (let k = 0; k < K; k += edgeStep) {
       for (let j = 0; j < (high ? 3 : 2); j++) {
-        const [lx, lz] = outlinePoint(plot, radial, k + rng.range(0, edgeStep), rng.range(0.9, 1.04));
+        const [lx, lz] = outlinePoint(plot, radial, k + rng.range(0, edgeStep), rng.range(0.92, 1.1));
         const [x, z] = world(lx, lz);
-        const h = rng.range(0.7, 1.3);
-        grass.push({ x, y: 0.02, z, sx: rng.range(0.9, 1.5), sy: h, ry: rng.next() * 6.3, color: rng.pick(grassTints) });
+        const h = rng.range(0.6, 1.1);
+        grass.push({ x, y: -0.05, z, sx: rng.range(1.1, 1.8), sy: h, ry: rng.next() * 6.3, color: rng.pick(grassTints), tilt: rng.range(-0.25, 0.25) });
       }
       if (rng.chance(0.45)) {
         const [lx, lz] = outlinePoint(plot, radial, k, rng.range(1.04, 1.12));
         const [x, z] = world(lx, lz);
-        reeds.push({ x, y: -0.35, z, sx: rng.range(0.5, 0.8), sy: rng.range(1.5, 2.3), ry: rng.next() * 6.3, color: rng.pick(grassTints) });
+        reeds.push({ x, y: -0.3, z, sx: rng.range(0.9, 1.3), sy: rng.range(0.9, 1.5), ry: rng.next() * 6.3, color: rng.pick(grassTints) });
       }
     }
 
@@ -205,7 +206,7 @@ export function buildFloatingGardens(q: QualitySettings, lib: TextureLibrary): T
   const a2c = q.tier === 'high';
   const cropMesh = instanced(rosette(7, 4), foliageMaterial(lib.leaf, 0.03, a2c), crops);
   const grassMesh = instanced(crossedCards(3), foliageMaterial(lib.grass, 0.07, a2c), grass);
-  const reedMesh = instanced(crossedCards(2), foliageMaterial(lib.reed, 0.09, a2c), reeds);
+  const reedMesh = instanced(crossedCards(3), foliageMaterial(lib.reed, 0.09, a2c), reeds);
   for (const m of [cropMesh, grassMesh, reedMesh]) m.receiveShadow = true;
   cropMesh.castShadow = true;
   group.add(cropMesh, grassMesh, reedMesh);

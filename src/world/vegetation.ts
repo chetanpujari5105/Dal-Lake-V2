@@ -1,132 +1,38 @@
 import * as THREE from 'three';
-import { composeMatrix, MeshBuilder } from '../core/geometry';
-import { Rng } from '../core/math';
+import { Rng, smoothstep, fbm } from '../core/math';
 import type { QualitySettings } from '../core/quality';
 import { BOULEVARD_X, lakeSdf, NISHAT, SHORE, terrainHeight } from './layout';
 import type { TreeSpot } from './props';
+import {
+  buildSpecies, createCardAtlas, createImpostorAtlas, IMP_ASPECT, impostorGeometry, impostorMaterial,
+  treeCardMaterial, type SpeciesId, type SpeciesModel,
+} from './trees';
 
-// Every species is two instanced meshes (trunk + crown) so crowns can be tinted
-// per instance (green chinars next to autumn-red ones) without tinting the bark.
+// Every tree exists twice: as a 3D leaf-card model (drawn only when near the
+// camera and inside its view) and as a painted impostor (drawn otherwise). The
+// swap happens per tree each frame, so off-screen foliage costs nothing and the
+// whole distant forest is a single draw call.
 
-interface Species {
-  trunk: THREE.BufferGeometry;
-  crown: THREE.BufferGeometry;
-  colors: string[];
-  castShadow: boolean;
-}
+const SPECIES: SpeciesId[] = ['chinar', 'poplar', 'willow', 'deodar', 'cypress', 'shrub', 'walnut'];
 
-function jitterGeometry(g: THREE.BufferGeometry, amount: number, seed: number): THREE.BufferGeometry {
-  const rng = new Rng(seed);
-  const pos = g.attributes.position;
-  // Jitter shared vertices consistently so the low-poly crown stays watertight.
-  const map = new Map<string, [number, number, number]>();
-  for (let i = 0; i < pos.count; i++) {
-    const key = `${pos.getX(i).toFixed(3)},${pos.getY(i).toFixed(3)},${pos.getZ(i).toFixed(3)}`;
-    let o = map.get(key);
-    if (!o) {
-      o = [rng.range(-amount, amount), rng.range(-amount, amount), rng.range(-amount, amount)];
-      map.set(key, o);
-    }
-    pos.setXYZ(i, pos.getX(i) + o[0], pos.getY(i) + o[1], pos.getZ(i) + o[2]);
-  }
-  g.computeVertexNormals();
-  return g;
-}
-
-function crown(build: (b: MeshBuilder) => void, seed: number, jitter: number): THREE.BufferGeometry {
-  const b = new MeshBuilder(seed, 0.18);
-  build(b);
-  return jitterGeometry(b.build(), jitter, seed);
-}
-
-function trunk(build: (b: MeshBuilder) => void): THREE.BufferGeometry {
-  const b = new MeshBuilder(1);
-  build(b);
-  return b.build();
-}
-
-const SPECIES = {
-  poplar: (): Species => ({
-    trunk: trunk((b) => b.cyl(0.12, 0.22, 4, 5, 0, 2, 0, '#5e4a38')),
-    crown: crown((b) => {
-      b.sphere(1, 1, 0, 8.4, 0, '#ffffff', 1.5, 6.2, 1.5);
-      b.sphere(1, 0, 0, 13.2, 0, '#f2f2f2', 0.9, 2.2, 0.9);
-    }, 5, 0.18),
-    colors: ['#5f7d33', '#6c8a3a', '#56722f', '#7c8f38', '#a7962f'],
-    castShadow: true,
-  }),
-  chinar: (): Species => ({
-    trunk: trunk((b) => {
-      b.cyl(0.4, 0.7, 6, 7, 0, 3, 0, '#6e5f52');
-      b.cyl(0.18, 0.28, 3.4, 5, 1.2, 6.5, 0, '#6e5f52', 0, 0, -0.6);
-      b.cyl(0.18, 0.28, 3.4, 5, -1.1, 6.6, 0.4, '#6e5f52', 0.3, 0, 0.6);
-    }),
-    crown: crown((b) => {
-      b.sphere(4.6, 1, 0, 10.5, 0, '#ffffff', 1, 0.78, 1);
-      b.sphere(3.4, 1, 3.4, 9.0, 1.2, '#eeeeee', 1, 0.8, 1);
-      b.sphere(3.3, 1, -3.2, 9.4, -1.0, '#f5f5f5', 1, 0.8, 1);
-      b.sphere(3.0, 1, 0.8, 9.2, -3.4, '#e6e6e6', 1, 0.8, 1);
-      b.sphere(3.0, 1, -0.6, 12.8, 1.4, '#fafafa', 1, 0.8, 1);
-    }, 6, 0.45),
-    colors: ['#4e6b2e', '#587632', '#4a6530', '#b8572a', '#c9782f', '#9c3b22', '#d18c3a'],
-    castShadow: true,
-  }),
-  willow: (): Species => ({
-    trunk: trunk((b) => b.cyl(0.25, 0.4, 3.2, 6, 0.3, 1.6, 0, '#5a4b3c', 0, 0, -0.2)),
-    crown: crown((b) => {
-      b.sphere(3.4, 1, 0.6, 5.2, 0, '#ffffff', 1.1, 0.8, 1.1);
-      b.add(new THREE.CylinderGeometry(2.6, 4.2, 3.6, 9, 1, true), '#e8e8e8', composeMatrix(0.6, 3.2, 0));
-    }, 7, 0.35),
-    colors: ['#7f9a45', '#8ea64e', '#90a24a', '#a3ad58'],
-    castShadow: true,
-  }),
-  cypress: (): Species => ({
-    trunk: trunk((b) => b.cyl(0.1, 0.14, 1.2, 5, 0, 0.6, 0, '#4a3c30')),
-    crown: crown((b) => {
-      b.add(new THREE.ConeGeometry(0.95, 7.5, 7), '#ffffff', composeMatrix(0, 4.6, 0));
-    }, 8, 0.08),
-    colors: ['#2f4a2a', '#34512d', '#2a4327'],
-    castShadow: true,
-  }),
-  deodar: (): Species => ({
-    trunk: trunk((b) => b.cyl(0.3, 0.4, 2, 4, 0, 1, 0, '#3e3228')),
-    crown: crown((b) => {
-      b.add(new THREE.ConeGeometry(3.2, 7, 5), '#ffffff', composeMatrix(0, 5, 0));
-      b.add(new THREE.ConeGeometry(2.2, 6, 5), '#eeeeee', composeMatrix(0, 9, 0));
-    }, 9, 0.2),
-    colors: ['#2b3f2c', '#34492e', '#2f4531', '#3a4f33'],
-    castShadow: false,
-  }),
+const TINTS: Record<SpeciesId, string[]> = {
+  chinar: ['#8fae5c', '#9ab862', '#86a456', '#e0813f', '#d0643a', '#e8a64a', '#b9502f'],
+  poplar: ['#aac86e', '#b9cf72', '#9fbf66', '#d8cf66'],
+  willow: ['#bcd684', '#b0cc7a', '#c4d98a'],
+  deodar: ['#6f8f63', '#67865d', '#7a9868', '#5f7d57'],
+  cypress: ['#5d7d52', '#66875a'],
+  shrub: ['#9cbd66', '#8fb05e', '#a9c46e', '#b8b45c'],
+  walnut: ['#95b464', '#8aaa5c', '#a0bb68'],
 };
 
-function plant(
-  species: Species,
-  spots: TreeSpot[],
-  seed: number,
-  mat: THREE.Material,
-  layer = 0,
-): THREE.Group {
-  const rng = new Rng(seed);
-  const g = new THREE.Group();
-  const trunkMesh = new THREE.InstancedMesh(species.trunk, mat, spots.length);
-  const crownMesh = new THREE.InstancedMesh(species.crown, mat, spots.length);
-  const col = new THREE.Color();
-  spots.forEach((s, i) => {
-    const y = s.y ?? terrainHeight(s.x, s.z) - 0.2;
-    const sy = s.s * rng.range(0.9, 1.12);
-    const m = composeMatrix(s.x, y, s.z, rng.range(-0.03, 0.03), rng.next() * Math.PI * 2, rng.range(-0.03, 0.03), s.s, sy, s.s);
-    trunkMesh.setMatrixAt(i, m);
-    crownMesh.setMatrixAt(i, m);
-    col.set(rng.pick(species.colors)).multiplyScalar(rng.range(0.88, 1.1));
-    crownMesh.setColorAt(i, col);
-  });
-  for (const m of [trunkMesh, crownMesh]) {
-    m.castShadow = species.castShadow;
-    m.computeBoundingSphere();
-    m.layers.set(layer);
-  }
-  g.add(trunkMesh, crownMesh);
-  return g;
+interface Tree {
+  sp: number;
+  x: number;
+  y: number;
+  z: number;
+  s: number;
+  ry: number;
+  color: THREE.Color;
 }
 
 export interface VegetationInput {
@@ -135,92 +41,261 @@ export interface VegetationInput {
   willows: TreeSpot[];
 }
 
-export function buildVegetation(q: QualitySettings, input: VegetationInput, farLayer: number): THREE.Group {
-  const rng = new Rng(2024);
-  const group = new THREE.Group();
-  group.name = 'vegetation';
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  const n = (x: number) => Math.round(x * q.treeScale);
+export class Forest {
+  readonly group = new THREE.Group();
+  private trees: Tree[] = [];
+  private models: SpeciesModel[] = [];
+  private near: THREE.InstancedMesh[] = [];
+  private far!: THREE.InstancedMesh;
+  private isNear!: Uint8Array;
+  private matrices!: Float32Array;
+  private frustum = new THREE.Frustum();
+  private projView = new THREE.Matrix4();
+  private sphere = new THREE.Sphere();
+  private zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  private nearR: number;
 
-  const inNishat = (x: number, z: number) => x > NISHAT.x0 - 8 && x < NISHAT.x1 + 8 && z > NISHAT.z0 - 8 && z < NISHAT.z1 + 8;
-  const onLand = (x: number, z: number, minSdf: number, maxH = 30) => {
-    if (inNishat(x, z)) return false;
-    const d = lakeSdf(x, z);
-    return d > minSdf && terrainHeight(x, z) < maxH;
-  };
+  constructor(q: QualitySettings, input: VegetationInput, renderer: THREE.WebGLRenderer) {
+    this.group.name = 'forest';
+    const high = q.tier === 'high';
+    this.nearR = high ? 190 : 125;
+    this.place(q, input);
 
-  // Poplars: the Boulevard row, avenues across the plain and scattered stands.
-  const poplars: TreeSpot[] = [];
-  for (let z = -236; z <= 190; z += 9) {
-    if (inNishat(BOULEVARD_X + 20, z)) continue;
-    poplars.push({ x: BOULEVARD_X + 20 + rng.range(-1, 1), z, s: rng.range(0.9, 1.15) });
+    const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    const cardMat = treeCardMaterial(createCardAtlas(aniso), high);
+    const impMat = impostorMaterial(createImpostorAtlas(aniso));
+
+    const counts = SPECIES.map((_, i) => this.trees.filter((t) => t.sp === i).length);
+    SPECIES.forEach((sp, i) => {
+      const model = buildSpecies(sp, high ? 1 : 0.55, 900 + i);
+      this.models.push(model);
+      const mesh = new THREE.InstancedMesh(model.near, cardMat, Math.max(1, counts[i]));
+      mesh.count = 0;
+      mesh.frustumCulled = false; // culled per tree below
+      mesh.castShadow = sp !== 'shrub' && sp !== 'deodar';
+      mesh.receiveShadow = true;
+      mesh.name = `trees-${sp}`;
+      // Colour buffer must exist before the first compile.
+      mesh.setColorAt(0, new THREE.Color(1, 1, 1));
+      this.near.push(mesh);
+      this.group.add(mesh);
+    });
+
+    // Far impostors: one instanced mesh for all species.
+    const n = this.trees.length;
+    const geo = impostorGeometry();
+    const slots = new Float32Array(n);
+    this.far = new THREE.InstancedMesh(geo, impMat, n);
+    this.matrices = new Float32Array(n * 16);
+    const m = new THREE.Matrix4();
+    const q4 = new THREE.Quaternion();
+    const sc = new THREE.Vector3();
+    const pos = new THREE.Vector3();
+    this.trees.forEach((t, i) => {
+      const model = this.models[t.sp];
+      q4.setFromAxisAngle(_up, t.ry);
+      m.compose(pos.set(t.x, t.y, t.z), q4, sc.setScalar(t.s));
+      m.toArray(this.matrices, i * 16);
+      // Impostor quads are 1 x IMP_ASPECT; scale them to the species' height.
+      const h = (model.height * t.s) / IMP_ASPECT;
+      m.compose(pos, q4, sc.setScalar(h));
+      this.far.setMatrixAt(i, m);
+      this.far.setColorAt(i, t.color);
+      slots[i] = model.slot;
+    });
+    geo.setAttribute('aSlot', new THREE.InstancedBufferAttribute(slots, 1));
+    this.farMatrices = new Float32Array(this.far.instanceMatrix.array as Float32Array);
+    this.far.frustumCulled = false;
+    this.far.receiveShadow = true;
+    this.far.name = 'trees-impostors';
+    this.group.add(this.far);
+    this.isNear = new Uint8Array(n);
   }
-  const avenues = Math.round(26 * q.treeScale + 6);
-  for (let a = 0; a < avenues; a++) {
-    const ang = rng.next() * Math.PI * 2;
-    const r = rng.range(300, 640);
-    let x = Math.cos(ang) * r;
-    let z = Math.sin(ang) * r;
-    const dir = rng.next() * Math.PI;
-    const len = rng.int(6, 16);
-    for (let i = 0; i < len; i++) {
-      if (onLand(x, z, 12, 20)) poplars.push({ x, z, s: rng.range(0.85, 1.2) });
-      x += Math.cos(dir) * 7;
-      z += Math.sin(dir) * 7;
+
+  private farMatrices: Float32Array;
+
+  get count(): number {
+    return this.trees.length;
+  }
+
+  /** Swap trees between near models and impostors, and cull near trees to the view. */
+  update(camera: THREE.PerspectiveCamera): void {
+    const cx = camera.position.x;
+    const cz = camera.position.z;
+    this.projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.projView);
+    const nearIn = this.nearR * this.nearR;
+    const nearOut = (this.nearR * 1.08) ** 2;
+    const farArr = this.far.instanceMatrix.array as Float32Array;
+    const zero = this.zero.elements;
+    let changed = 0;
+    let lo = Infinity;
+    let hi = -1;
+    for (const mesh of this.near) mesh.count = 0;
+
+    for (let i = 0; i < this.trees.length; i++) {
+      const t = this.trees[i];
+      const dx = t.x - cx;
+      const dz = t.z - cz;
+      const d2 = dx * dx + dz * dz;
+      const wasNear = this.isNear[i] === 1;
+      const nowNear = wasNear ? d2 < nearOut : d2 < nearIn;
+      if (nowNear !== wasNear) {
+        this.isNear[i] = nowNear ? 1 : 0;
+        const src = nowNear ? zero : this.farMatrices.subarray(i * 16, i * 16 + 16);
+        farArr.set(src, i * 16);
+        changed++;
+        lo = Math.min(lo, i);
+        hi = Math.max(hi, i);
+      }
+      if (!nowNear) continue;
+      const model = this.models[t.sp];
+      const r = model.radius * t.s;
+      this.sphere.center.set(t.x, t.y + r * 0.8, t.z);
+      this.sphere.radius = r;
+      if (!this.frustum.intersectsSphere(this.sphere)) continue;
+      const mesh = this.near[t.sp];
+      const k = mesh.count++;
+      (mesh.instanceMatrix.array as Float32Array).set(this.matrices.subarray(i * 16, i * 16 + 16), k * 16);
+      t.color.toArray(mesh.instanceColor!.array, k * 3);
+    }
+    for (const mesh of this.near) {
+      if (mesh.count === 0) continue;
+      mesh.instanceMatrix.clearUpdateRanges();
+      mesh.instanceMatrix.addUpdateRange(0, mesh.count * 16);
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.instanceColor!.clearUpdateRanges();
+      mesh.instanceColor!.addUpdateRange(0, mesh.count * 3);
+      mesh.instanceColor!.needsUpdate = true;
+    }
+    if (changed) {
+      const attr = this.far.instanceMatrix;
+      attr.clearUpdateRanges();
+      attr.addUpdateRange(lo * 16, (hi - lo + 1) * 16);
+      attr.needsUpdate = true;
     }
   }
-  for (let i = 0, tries = 0; i < n(160) && tries < 5000; tries++) {
-    const x = rng.range(-700, 700);
-    const z = rng.range(-700, 700);
-    if (onLand(x, z, 10, 40)) {
-      poplars.push({ x, z, s: rng.range(0.8, 1.2) });
+
+  // -------------------------------------------------------------------------
+
+  private add(sp: SpeciesId, x: number, z: number, s: number, rng: Rng, y?: number): void {
+    const i = SPECIES.indexOf(sp);
+    const color = new THREE.Color(rng.pick(TINTS[sp])).multiplyScalar(rng.range(0.9, 1.08));
+    this.trees.push({ sp: i, x, z, y: y ?? terrainHeight(x, z) - 0.15, s, ry: rng.next() * Math.PI * 2, color });
+  }
+
+  private place(q: QualitySettings, input: VegetationInput): void {
+    const rng = new Rng(2024);
+    const n = (x: number) => Math.round(x * q.treeScale);
+    const inNishat = (x: number, z: number) => x > NISHAT.x0 - 8 && x < NISHAT.x1 + 8 && z > NISHAT.z0 - 8 && z < NISHAT.z1 + 8;
+    const onLand = (x: number, z: number, minSdf: number, maxH = 30) => {
+      if (inNishat(x, z)) return false;
+      return lakeSdf(x, z) > minSdf && terrainHeight(x, z) < maxH;
+    };
+
+    for (const s of input.chinars) this.add('chinar', s.x, s.z, s.s * rng.range(0.9, 1.1), rng, s.y);
+    for (const s of input.cypresses) this.add('cypress', s.x, s.z, s.s * rng.range(0.92, 1.08), rng, s.y);
+    for (const s of input.willows) this.add('willow', s.x, s.z, s.s, rng, s.y);
+
+    // Poplars: the Boulevard row, avenues across the plain and scattered stands.
+    for (let z = -236; z <= 190; z += 9) {
+      if (inNishat(BOULEVARD_X + 20, z)) continue;
+      this.add('poplar', BOULEVARD_X + 20 + rng.range(-1, 1), z, rng.range(0.85, 1.1), rng);
+    }
+    const avenues = Math.round(26 * q.treeScale + 6);
+    for (let a = 0; a < avenues; a++) {
+      const ang = rng.next() * Math.PI * 2;
+      const r = rng.range(300, 640);
+      let x = Math.cos(ang) * r;
+      let z = Math.sin(ang) * r;
+      const dir = rng.next() * Math.PI;
+      const len = rng.int(6, 16);
+      for (let i = 0; i < len; i++) {
+        if (onLand(x, z, 12, 20)) this.add('poplar', x, z, rng.range(0.8, 1.15), rng);
+        x += Math.cos(dir) * 7;
+        z += Math.sin(dir) * 7;
+      }
+    }
+
+    // Orchards and groves on the plain: clumps of walnut and chinar with poplar
+    // accents, so the far shore reads as varied woodland rather than a picket fence.
+    const groves = n(70);
+    for (let g = 0, tries = 0; g < groves && tries < 3000; tries++) {
+      const x = rng.range(-760, 560);
+      const z = rng.range(-640, 640);
+      if (!onLand(x, z, 18, 26)) continue;
+      g++;
+      const size = rng.int(4, 11);
+      const kind = rng.next();
+      for (let i = 0; i < size; i++) {
+        const px = x + rng.range(-18, 18);
+        const pz = z + rng.range(-18, 18);
+        if (!onLand(px, pz, 12, 30)) continue;
+        const sp: SpeciesId = kind < 0.45 ? 'walnut' : kind < 0.75 ? 'chinar' : rng.chance(0.5) ? 'poplar' : 'walnut';
+        this.add(sp, px, pz, rng.range(0.75, 1.15), rng);
+      }
+    }
+
+    // Chinars scattered near the shore.
+    for (let i = 0, tries = 0; i < n(55) && tries < 4000; tries++) {
+      const x = rng.range(-500, 500);
+      const z = rng.range(-500, 500);
+      if (onLand(x, z, 16, 30) && lakeSdf(x, z) < 120) {
+        this.add('chinar', x, z, rng.range(0.8, 1.2), rng);
+        i++;
+      }
+    }
+
+    // The natural shoreline: willows leaning over the water, shrubs and young
+    // trees in a loose band behind them, never evenly spaced.
+    const stride = q.tier === 'high' ? 1 : 2;
+    for (let i = 0; i < SHORE.length; i += stride) {
+      const [sx, sz] = SHORE[i];
+      if (sx > 190) continue;
+      const len = Math.hypot(sx + 30, sz + 20) || 1;
+      const nx = (sx + 30) / len;
+      const nz = (sz + 20) / len;
+      const cluster = fbm(sx * 0.02, sz * 0.02, 2);
+      if (rng.chance(0.25 + cluster * 0.5)) {
+        const off = rng.range(3.5, 9);
+        const x = sx + nx * off;
+        const z = sz + nz * off;
+        if (lakeSdf(x, z) > 2) this.add('willow', x, z, rng.range(0.75, 1.15), rng);
+      }
+      const shrubs = rng.int(0, high(q) ? 3 : 2);
+      for (let k = 0; k < shrubs; k++) {
+        const off = rng.range(5, 22);
+        const x = sx + nx * off + rng.range(-3, 3);
+        const z = sz + nz * off + rng.range(-3, 3);
+        if (lakeSdf(x, z) > 3 && terrainHeight(x, z) < 8) this.add('shrub', x, z, rng.range(0.7, 1.4), rng);
+      }
+      if (rng.chance(0.3)) {
+        const off = rng.range(12, 30);
+        const x = sx + nx * off;
+        const z = sz + nz * off;
+        if (lakeSdf(x, z) > 8) this.add(rng.chance(0.5) ? 'walnut' : 'chinar', x, z, rng.range(0.6, 0.95), rng);
+      }
+    }
+
+    // Foothill forests: deodar, denser on the Zabarwan slopes behind the Boulevard,
+    // with broadleaf trees mixed into the lower edge.
+    for (let i = 0, tries = 0; i < n(9000) && tries < 160000; tries++) {
+      const ang = rng.next() * Math.PI * 2;
+      const r = rng.range(380, 1900);
+      const x = Math.cos(ang) * r;
+      const z = Math.sin(ang) * r;
+      const h = terrainHeight(x, z);
+      if (h < 16 || h > 360 || inNishat(x, z)) continue;
+      if (x < 0 && rng.chance(0.55)) continue;
+      // Patchy stands: thin out where a low-frequency noise says "clearing".
+      const patch = fbm(x * 0.004 + 7, z * 0.004 - 3, 3);
+      if (rng.next() > smoothstep(0.3, 0.55, patch)) continue;
+      const broad = h < 60 && rng.chance(0.35);
+      this.add(broad ? (rng.chance(0.5) ? 'walnut' : 'chinar') : 'deodar', x, z, rng.range(1.0, 1.6) * (1 + r / 2000), rng, h - 0.5);
       i++;
     }
   }
-
-  // Chinars scattered near the shore, plus the placed ones (island, Boulevard, garden).
-  const chinars = [...input.chinars];
-  for (let i = 0, tries = 0; i < n(50) && tries < 4000; tries++) {
-    const x = rng.range(-500, 500);
-    const z = rng.range(-500, 500);
-    if (onLand(x, z, 16, 30) && lakeSdf(x, z) < 120) {
-      chinars.push({ x, z, s: rng.range(0.85, 1.25) });
-      i++;
-    }
-  }
-
-  // Willows trailing along the natural (non-Boulevard) shoreline.
-  const willows = [...input.willows];
-  const stride = q.tier === 'high' ? 2 : 4;
-  for (let i = 0; i < SHORE.length; i += stride) {
-    const [sx, sz] = SHORE[i];
-    if (sx > 190) continue;
-    if (!rng.chance(0.75)) continue;
-    const len = Math.hypot(sx + 30, sz + 20) || 1;
-    const off = rng.range(3.5, 9);
-    const x = sx + ((sx + 30) / len) * off;
-    const z = sz + ((sz + 20) / len) * off;
-    if (lakeSdf(x, z) > 2) willows.push({ x, z, s: rng.range(0.7, 1.05) });
-  }
-
-  // Deodar forests on the foothills; far away and cheap, so kept out of reflections.
-  const deodars: TreeSpot[] = [];
-  for (let i = 0, tries = 0; i < n(2600) && tries < 40000; tries++) {
-    const ang = rng.next() * Math.PI * 2;
-    const r = rng.range(420, 1700);
-    const x = Math.cos(ang) * r;
-    const z = Math.sin(ang) * r;
-    const h = terrainHeight(x, z);
-    if (h < 25 || h > 330 || inNishat(x, z)) continue;
-    if (x < 0 && rng.chance(0.6)) continue;
-    deodars.push({ x, z, y: h - 0.5, s: rng.range(0.9, 1.6) * (1 + r / 1700) });
-    i++;
-  }
-
-  group.add(plant(SPECIES.poplar(), poplars, 1, mat));
-  group.add(plant(SPECIES.chinar(), chinars, 2, mat));
-  group.add(plant(SPECIES.willow(), willows, 3, mat));
-  group.add(plant(SPECIES.cypress(), input.cypresses, 4, mat));
-  group.add(plant(SPECIES.deodar(), deodars, 5, mat, farLayer));
-  return group;
 }
+
+const high = (q: QualitySettings) => q.tier === 'high';
+const _up = new THREE.Vector3(0, 1, 0);

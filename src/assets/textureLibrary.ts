@@ -256,36 +256,40 @@ function woolTexture(anisotropy: number): THREE.Texture {
   return canvasTexture(c, anisotropy);
 }
 
-/** Alpha-cut grass blades; tip at the top of the texture. */
+/** Alpha-cut grass blades; tip at the top of the texture. Reeds arch softly rather than spike. */
 function grassTexture(anisotropy: number, reeds: boolean): THREE.Texture {
-  const W = reeds ? 128 : 256;
+  const W = 256;
   const H = 512;
   const [c, ctx] = makeCanvas(W, H);
   const rng = new Rng(reeds ? 31 : 17);
-  const blades = reeds ? 16 : 46;
+  const blades = reeds ? 34 : 56;
   for (let i = 0; i < blades; i++) {
-    const x0 = rng.range(W * 0.1, W * 0.9);
-    const h = rng.range(H * (reeds ? 0.6 : 0.4), H * 0.98);
-    const bend = rng.range(-W * 0.22, W * 0.22);
-    const wBase = rng.range(4, reeds ? 7 : 9);
+    const x0 = rng.range(W * 0.15, W * 0.85);
+    const h = rng.range(H * (reeds ? 0.45 : 0.35), H * (reeds ? 0.92 : 0.96));
+    // Blades lean out from the clump centre and arch over near the tip.
+    const lean = (x0 - W / 2) / (W / 2);
+    const bend = lean * W * rng.range(0.15, 0.4) + rng.range(-W * 0.08, W * 0.08);
+    const wBase = rng.range(reeds ? 4 : 3, reeds ? 8 : 7);
     const g = ctx.createLinearGradient(0, H, 0, H - h);
-    const hue = reeds ? rng.range(58, 76) : rng.range(72, 98);
+    const hue = reeds ? rng.range(62, 84) : rng.range(72, 98);
     const light = rng.range(reeds ? 30 : 28, reeds ? 42 : 40);
-    g.addColorStop(0, `hsl(${hue - 10}, 45%, ${light - 12}%)`);
-    g.addColorStop(0.55, `hsl(${hue}, 48%, ${light}%)`);
-    g.addColorStop(1, `hsl(${hue - 25}, 55%, ${light + 22}%)`);
+    g.addColorStop(0, `hsl(${hue - 10}, 40%, ${light - 12}%)`);
+    g.addColorStop(0.55, `hsl(${hue}, 46%, ${light}%)`);
+    g.addColorStop(1, `hsl(${hue - 18}, 48%, ${light + 16}%)`);
     ctx.fillStyle = g;
+    const tipX = x0 + bend;
+    const tipY = H - h + (reeds ? Math.abs(bend) * 0.5 : 0);
     ctx.beginPath();
     ctx.moveTo(x0 - wBase, H);
-    ctx.quadraticCurveTo(x0 - wBase * 0.6 + bend * 0.4, H - h * 0.55, x0 + bend, H - h);
-    ctx.quadraticCurveTo(x0 + wBase * 0.6 + bend * 0.4, H - h * 0.55, x0 + wBase, H);
+    ctx.quadraticCurveTo(x0 - wBase * 0.5 + bend * 0.2, H - h * 0.6, tipX, tipY);
+    ctx.quadraticCurveTo(x0 + wBase * 0.5 + bend * 0.25, H - h * 0.55, x0 + wBase, H);
     ctx.closePath();
     ctx.fill();
-    if (reeds && rng.chance(0.2)) {
-      // Cattail seed head.
-      ctx.fillStyle = '#5a3a22';
+    if (reeds && rng.chance(0.07)) {
+      // An occasional cattail seed head.
+      ctx.fillStyle = '#6a4a2c';
       ctx.beginPath();
-      ctx.ellipse(x0 + bend * 0.8, H - h * 0.86, 4, 16, 0, 0, Math.PI * 2);
+      ctx.ellipse(x0 + bend * 0.15, H - h * 0.7, 3.5, 12, bend * 0.002, 0, Math.PI * 2);
       ctx.fill();
     }
   }

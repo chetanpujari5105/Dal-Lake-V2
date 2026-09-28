@@ -24,7 +24,7 @@ import { PlayerShikara } from './world/shikara';
 import { createShikaraMaterials, type ShikaraMaterials } from './world/shikaraModel';
 import { buildShoreFringe } from './world/shoreline';
 import { buildEmbankment, buildTerrain } from './world/terrain';
-import { buildVegetation } from './world/vegetation';
+import { Forest } from './world/vegetation';
 import { Water } from './world/water';
 
 /** Objects on this layer are drawn normally but skipped by the reflection pass. */
@@ -52,6 +52,7 @@ export class App {
   private glows!: Glows;
   private birds!: Birds;
   private flowerBoats!: FlowerBoats;
+  private forest!: Forest;
   private houseboats: HouseboatInstance[] = [];
   private houseboatMats!: HouseboatMaterials;
   private textures!: TextureLibrary;
@@ -177,14 +178,14 @@ export class App {
           weight: 3,
           run: () => {
             scene.add(buildTerrain(q));
-            scene.add(buildEmbankment());
+            
           },
         },
         {
           label: 'Mooring houseboats',
           weight: 2,
           run: () => {
-            this.houseboatMats = createHouseboatMaterials();
+            this.houseboatMats = createHouseboatMaterials(this.textures);
             HOUSEBOATS.forEach((h, i) => {
               const hb = buildHouseboat(h, i, this.houseboatMats);
               this.houseboats.push(hb);
@@ -199,7 +200,9 @@ export class App {
             const props = buildProps(q, this.houseboatMats, this.boatMats, this.textures);
             scene.add(props.group);
             scene.add(buildShoreFringe(q, this.textures));
-            scene.add(buildVegetation(q, props, NO_REFLECT));
+            this.forest = new Forest(q, props, this.renderer);
+            scene.add(this.forest.group);
+            scene.add(buildEmbankment(this.textures));
             const lanterns = [...props.lanterns, ...this.houseboats.flatMap((h) => h.lanterns)];
             this.flowerBoats = new FlowerBoats(q.tier === 'high' ? 3 : 2, this.boatMats);
             scene.add(this.flowerBoats.group);
@@ -389,7 +392,9 @@ export class App {
     // Camera.
     this.rig.update(dt, { x: this.controller.x, z: this.controller.z, heading: this.controller.heading, speed: this.controller.forwardSpeed }, s.sunDir);
 
-    // Level of detail: drop houseboat fretwork when far away.
+    // Level of detail: trees swap between models and impostors; houseboat fretwork drops out far away.
+    this.camera.updateMatrixWorld();
+    this.forest.update(this.camera);
     const cam = this.camera.position;
     for (const hb of this.houseboats) hb.detail.visible = cam.distanceToSquared(hb.group.position) < 230 * 230;
 

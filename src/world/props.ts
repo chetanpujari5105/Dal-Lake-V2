@@ -9,6 +9,7 @@ import {
 } from './layout';
 import type { TextureLibrary } from '../assets/textureLibrary';
 import { buildFloatingGardens } from './gardens';
+import { brickTexture, lawnTexture, plasterTexture, triplanar } from '../assets/surfaces';
 import { buildShikaraParts, partsToGroup, transformParts, type Part, type ShikaraMaterials } from './shikaraModel';
 import type { FabricKey } from '../assets/textureLibrary';
 
@@ -27,8 +28,13 @@ export interface PropsResult {
   willows: TreeSpot[];
 }
 
-const vegMaterial = () => new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-const stoneMaterial = () => new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const vegMaterial = () => new THREE.MeshLambertMaterial({ vertexColors: true });
+let stoneTex: THREE.Texture | null = null;
+/** Dressed stone: the CC0 boulder photo projected triplanar at about 1.8 m per tile. */
+const stoneMaterial = () =>
+  triplanar(new THREE.MeshStandardMaterial({ vertexColors: true, map: stoneTex, roughness: 0.92 }), 1.8, 'prop-stone', 1.55, 0.75);
+let lawnTex: THREE.Texture | null = null;
+const lawnMaterial = () => triplanar(new THREE.MeshStandardMaterial({ vertexColors: true, map: lawnTex, roughness: 0.95 }), 3, 'prop-lawn', 2.4, 0.7);
 
 export function buildProps(q: QualitySettings, mats: HouseboatMaterials, boatMats: ShikaraMaterials, lib: TextureLibrary): PropsResult {
   const group = new THREE.Group();
@@ -37,6 +43,8 @@ export function buildProps(q: QualitySettings, mats: HouseboatMaterials, boatMat
   const chinars: TreeSpot[] = [];
   const cypresses: TreeSpot[] = [];
   const willows: TreeSpot[] = [];
+  stoneTex = lib.rock.map;
+  lawnTex = lawnTexture();
 
   group.add(buildFloatingGardens(q, lib));
   group.add(buildLotus(q));
@@ -165,6 +173,7 @@ function buildBoulevard(lanterns: THREE.Vector3[], chinars: TreeSpot[]): THREE.O
 // Nishat Bagh: stepped terraces, a central water channel and a pavilion at the top.
 function buildNishat(chinars: TreeSpot[], cypresses: TreeSpot[], lanterns: THREE.Vector3[]): THREE.Object3D {
   const b = new MeshBuilder(88, 0.05);
+  const lawn = new MeshBuilder(89, 0.06);
   const { x0, x1, z0, z1, steps } = NISHAT;
   const stepLen = (x1 - x0) / steps;
   const zc = (z0 + z1) / 2;
@@ -174,11 +183,11 @@ function buildNishat(chinars: TreeSpot[], cypresses: TreeSpot[], lanterns: THREE
     const top = nishatTerraceTop(sx + 0.1);
     const depth = top + 8;
     // Terrace lawn with retaining wall face.
-    b.box(stepLen, depth, width, sx + stepLen / 2, top - depth / 2, zc, '#6f8f3e');
+    lawn.box(stepLen, depth, width, sx + stepLen / 2, top - depth / 2, zc, '#7f9f4a');
     b.box(0.6, depth + 0.05, width, sx + 0.3, top - depth / 2 + 0.03, zc, '#b09a7c');
     // Flower beds either side of the channel.
-    b.box(stepLen * 0.7, 0.12, 3, sx + stepLen / 2, top + 0.06, zc - 7, i % 2 ? '#c2452d' : '#d9a03a');
-    b.box(stepLen * 0.7, 0.12, 3, sx + stepLen / 2, top + 0.06, zc + 7, i % 2 ? '#d9a03a' : '#c2452d');
+    lawn.box(stepLen * 0.7, 0.18, 3, sx + stepLen / 2, top + 0.06, zc - 7, i % 2 ? '#d0553a' : '#e6b04a');
+    lawn.box(stepLen * 0.7, 0.18, 3, sx + stepLen / 2, top + 0.06, zc + 7, i % 2 ? '#e6b04a' : '#d0553a');
     // Central water channel and a cascade down each wall.
     b.box(stepLen, 0.1, 2.4, sx + stepLen / 2, top + 0.02, zc, '#9fb7c2');
     b.box(0.2, 5.2, 2.4, sx + 0.05, top - 2.6, zc, '#d7e3e6');
@@ -209,10 +218,14 @@ function buildNishat(chinars: TreeSpot[], cypresses: TreeSpot[], lanterns: THREE
   b.add(new THREE.ConeGeometry(6.4, 2.6, 4), '#5a4a3c', composeMatrix(px, topH + 8.8, zc, 0, Math.PI / 4));
   for (let k = -2; k <= 2; k++) b.box(0.3, 2.8, 1.3, px - 4.55, topH + 1.6, zc + k * 2, '#3a2e24');
   lanterns.push(new THREE.Vector3(px - 5, topH + 3.6, zc));
+  const g = new THREE.Group();
   const mesh = new THREE.Mesh(b.build(), stoneMaterial());
   mesh.receiveShadow = true;
   mesh.castShadow = true;
-  return mesh;
+  const lawnMesh = new THREE.Mesh(lawn.build(), lawnMaterial());
+  lawnMesh.receiveShadow = true;
+  g.add(mesh, lawnMesh);
+  return g;
 }
 
 // The fort crowning Hari Parbat, seen as a silhouette against the sunset.
@@ -243,52 +256,110 @@ function buildHariParbat(): THREE.Object3D {
   return mesh;
 }
 
-// Kashmiri houses: brick and timber with steep tin roofs, on the shores and plain.
+// Kashmiri houses: brick with timber lacing, steep corrugated-tin roofs, a
+// projecting wooden balcony (dub) on the upper floor, grouped into villages.
 function buildHouses(q: QualitySettings, mats: HouseboatMaterials): THREE.Object3D {
   const g = new THREE.Group();
   const rng = new Rng(123);
-  const walls = new MeshBuilder(124, 0.12);
+  const walls = new MeshBuilder(124, 0.1);
+  const wood = new MeshBuilder(126, 0.08);
+  const roofs = new MeshBuilder(127, 0.08);
   const windows = new MeshBuilder(125);
-  const count = q.tier === 'high' ? 70 : 38;
-  let placed = 0;
-  for (let tries = 0; tries < 3000 && placed < count; tries++) {
+  const villages = q.tier === 'high' ? 16 : 10;
+  const perVillage = q.tier === 'high' ? 6 : 4;
+  let v = 0;
+  for (let tries = 0; tries < 4000 && v < villages; tries++) {
     const a = rng.range(Math.PI * 0.35, Math.PI * 1.75);
-    const r = rng.range(290, 620);
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    const d = lakeSdf(x, z);
-    if (d < 22 || d > 260) continue;
-    if (x > 200) continue;
-    const h0 = terrainHeight(x, z);
-    if (h0 > 30) continue;
-    const w = rng.range(6, 10);
-    const l = rng.range(7, 11);
+    const r = rng.range(300, 640);
+    const vx = Math.cos(a) * r;
+    const vz = Math.sin(a) * r;
+    const d0 = lakeSdf(vx, vz);
+    if (d0 < 30 || d0 > 280 || vx > 200 || terrainHeight(vx, vz) > 24) continue;
+    v++;
+    const lane = rng.range(0, Math.PI);
+    for (let k = 0; k < perVillage; k++) {
+      const along = (k - perVillage / 2) * rng.range(11, 16);
+      const x = vx + Math.cos(lane) * along + rng.range(-5, 5);
+      const z = vz + Math.sin(lane) * along + rng.range(-5, 5);
+      if (lakeSdf(x, z) < 22) continue;
+      const h0 = terrainHeight(x, z);
+      if (h0 > 30) continue;
+      house(x, h0, z, lane + (rng.chance(0.5) ? Math.PI / 2 : 0) + rng.range(-0.12, 0.12));
+    }
+  }
+
+  function house(x: number, h0: number, z: number, ry: number): void {
+    const w = rng.range(7, 10);
+    const l = rng.range(8, 12);
     const floors = rng.int(2, 3);
-    const hgt = floors * 2.9;
-    const ry = rng.range(-0.3, 0.3) + (rng.chance(0.5) ? Math.PI / 2 : 0);
-    const wall = rng.pick(['#8b5a3c', '#9a6448', '#c9b99a', '#b07a55', '#7f5a44']);
-    const roof = rng.pick(['#3f5f55', '#6b6b6b', '#7a3b2e', '#4d5a6a']);
-    walls.with(composeMatrix(x, h0, z, 0, ry), () => {
-      walls.box(w, hgt, l, 0, hgt / 2 - 0.5, 0, wall);
-      walls.box(w + 0.2, 0.25, l + 0.2, 0, 2.9 - 0.5, 0, '#5a4030');
-      const pitch = 0.62;
-      const half = w / 2 + 0.5;
+    const fh = 2.9;
+    const hgt = floors * fh;
+    const plaster = rng.chance(0.3);
+    const wall = plaster ? rng.pick(['#efe7d8', '#e8dcc4', '#dfe3e0']) : rng.pick(['#f0e4dc', '#e8d8cc', '#f4ece4']);
+    const roof = rng.pick(['#4f7560', '#6f7475', '#8e3c2e', '#5d6b7a', '#7b8a6a']);
+    const timber = rng.pick(['#5a4030', '#4a3426', '#6a4a34']);
+    const m = composeMatrix(x, h0, z, 0, ry);
+    for (const b of [wood, roofs, windows]) b.push(m);
+    walls.with(m, () => {
+      walls.box(w, hgt + 0.6, l, 0, hgt / 2 - 0.3, 0, wall);
+      // Stone plinth.
+      walls.box(w + 0.3, 0.7, l + 0.3, 0, 0.05, 0, '#9d9384');
+      for (let f = 1; f < floors; f++) wood.box(w + 0.16, 0.22, l + 0.16, 0, 0.3 + f * fh - 0.3, 0, timber);
+      wood.box(w + 0.2, 0.26, l + 0.2, 0, hgt + 0.15, 0, timber);
+      // Steep hipped-gable roof with deep eaves and an attic dormer.
+      const pitch = 0.78;
+      const half = w / 2 + 0.7;
       const slope = half / Math.cos(pitch);
       const rise = Math.tan(pitch) * half;
-      walls.box(slope, 0.12, l + 1, -half / 2, hgt - 0.5 + rise / 2, 0, roof, 0, 0, pitch);
-      walls.box(slope, 0.12, l + 1, half / 2, hgt - 0.5 + rise / 2, 0, roof, 0, 0, -pitch);
-      for (const zz of [-l / 2 - 0.02, l / 2 + 0.02]) walls.tris([-w / 2, hgt - 0.5, zz, w / 2, hgt - 0.5, zz, 0, hgt - 0.5 + rise - 0.3, zz], wall);
+      const ry0 = hgt + 0.25;
+      roofs.box(slope, 0.1, l + 1.4, -half / 2, ry0 + rise / 2, 0, roof, 0, 0, pitch);
+      roofs.box(slope, 0.1, l + 1.4, half / 2, ry0 + rise / 2, 0, roof, 0, 0, -pitch);
+      roofs.box(0.3, 0.16, l + 1.45, 0, ry0 + rise + 0.02, 0, roof);
+      for (const zz of [-l / 2 - 0.02, l / 2 + 0.02]) {
+        wood.tris([-w / 2 - 0.1, ry0, zz, w / 2 + 0.1, ry0, zz, 0, ry0 + rise - 0.25, zz], timber);
+        wood.tris([w / 2 + 0.1, ry0, zz, -w / 2 - 0.1, ry0, zz, 0, ry0 + rise - 0.25, zz], timber);
+        windows.box(0.9, 0.9, 0.06, 0, ry0 + rise * 0.35, zz + Math.sign(zz) * 0.02, '#ffffff');
+      }
+      // Windows with timber frames on every floor, both long faces.
+      const cols = Math.max(2, Math.floor(l / 2.6));
       for (let f = 0; f < floors; f++) {
-        for (const xx of [-w / 4, w / 4]) {
-          windows.box(0.8, 1.0, 0.06, xx, 1.2 + f * 2.9, l / 2 + 0.03, '#ffffff');
+        for (let c = 0; c < cols; c++) {
+          const wz = -l / 2 + ((c + 0.5) / cols) * l;
+          for (const sx of [-1, 1]) {
+            windows.box(0.06, 1.1, 0.8, sx * (w / 2 + 0.03), 1.3 + f * fh, wz, '#ffffff');
+            wood.box(0.08, 1.3, 0.12, sx * (w / 2 + 0.05), 1.3 + f * fh, wz - 0.46, timber);
+            wood.box(0.08, 1.3, 0.12, sx * (w / 2 + 0.05), 1.3 + f * fh, wz + 0.46, timber);
+            wood.box(0.1, 0.12, 1.1, sx * (w / 2 + 0.06), 1.95 + f * fh, wz, timber);
+          }
         }
       }
+      // Dub: a projecting wooden balcony with lattice on the top floor of one face.
+      if (floors >= 2 && rng.chance(0.7)) {
+        const by = (floors - 1) * fh + 0.4;
+        const bl = l * 0.55;
+        wood.box(1.1, 0.16, bl, w / 2 + 0.55, by, 0, timber);
+        wood.box(1.1, 2.1, bl, w / 2 + 0.6, by + 1.15, 0, timber);
+        windows.box(0.06, 1.0, bl * 0.8, w / 2 + 1.17, by + 1.35, 0, '#ffffff');
+        for (let k = 0; k < 8; k++) {
+          const zz = -bl * 0.4 + (k / 7) * bl * 0.8;
+          wood.box(0.04, 1.0, 0.04, w / 2 + 1.2, by + 1.35, zz, '#d9c7a3', 0, 0.6);
+          wood.box(0.04, 1.0, 0.04, w / 2 + 1.2, by + 1.35, zz, '#d9c7a3', 0, -0.6);
+        }
+        roofs.box(1.5, 0.08, bl + 0.4, w / 2 + 0.75, by + 2.35, 0, roof, 0, 0, -0.35);
+      }
     });
-    placed++;
+    for (const b of [wood, roofs, windows]) b.pop();
   }
-  const wallMesh = new THREE.Mesh(walls.build(), stoneMaterial());
-  wallMesh.castShadow = true;
-  wallMesh.receiveShadow = true;
-  g.add(wallMesh, new THREE.Mesh(windows.build(), mats.windowDim));
+
+  const wallMat = triplanar(new THREE.MeshStandardMaterial({ vertexColors: true, map: brickTexture(), roughness: 0.9 }), 2.2, 'house-brick', 1.25, 1);
+  const woodMat = triplanar(new THREE.MeshStandardMaterial({ vertexColors: true, map: plasterTexture(), roughness: 0.8 }), 1.5, 'house-wood', 1.1, 0.6);
+  const wallMesh = new THREE.Mesh(walls.build(), wallMat);
+  const woodMesh = new THREE.Mesh(wood.build(), woodMat);
+  const roofMesh = new THREE.Mesh(roofs.build(), mats.roof);
+  for (const m of [wallMesh, woodMesh, roofMesh]) {
+    m.castShadow = true;
+    m.receiveShadow = true;
+  }
+  g.add(wallMesh, woodMesh, roofMesh, new THREE.Mesh(windows.build(), mats.windowDim));
   return g;
 }

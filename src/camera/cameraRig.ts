@@ -64,9 +64,16 @@ const SHOTS: Shot[] = [
 
 export class CameraRig {
   mode: CameraMode = 'chase';
+  // Default chase framing: close and low enough that the shikara fills the lower
+  // third of the frame (canopy, hull and boatman readable), with the look point
+  // pushed ahead of the bow so the water in front stays visible for steering.
+  readonly defaultPitch = 0.23;
+  readonly defaultDistance = 8.6;
+  lookAhead = 10;
+  lookHeight = 1.4;
   yaw = 0;
-  pitch = 0.3;
-  distance = 13;
+  pitch = this.defaultPitch;
+  distance = this.defaultDistance;
   readonly minDistance = 5.5;
   readonly maxDistance = 36;
 
@@ -75,7 +82,7 @@ export class CameraRig {
   private desired = new THREE.Vector3();
   private desiredLook = new THREE.Vector3();
   private camHeading = 0;
-  private occludedDistance = 13;
+  private occludedDistance = 99;
   private lastInteract = -Infinity;
   private shotIndex = 0;
   private shotTime = 0;
@@ -208,17 +215,22 @@ export class CameraRig {
     const bx = -Math.sin(ang);
     const bz = -Math.cos(ang);
     const [fx, fz] = fwd(s.heading);
-    this.desiredLook.set(s.x + fx * 1.5, 1.35, s.z + fz * 1.5);
+    this.desiredLook.set(s.x + fx * this.lookAhead, this.lookHeight, s.z + fz * this.lookAhead);
 
-    const d = this.distance * (1 + Math.min(Math.abs(s.speed), 6) * 0.015);
+    // Portrait screens are narrow: pull back and look down a little more so the
+    // whole shikara and the water ahead still fit.
+    const aspect = this.camera.aspect;
+    const fit = aspect < 0.8 ? 1.32 : aspect < 1.2 ? 1.12 : 1;
+    const pitch = this.pitch + (aspect < 0.8 ? 0.06 : 0);
+    const d = this.distance * fit * (1 + Math.min(Math.abs(s.speed), 6) * 0.015);
     // Pull in if a houseboat or island sits between the boat and the camera.
     let free = d;
     const steps = 10;
     for (let i = 1; i <= steps; i++) {
       const f = i / steps;
-      const px = s.x + bx * Math.cos(this.pitch) * d * f;
-      const pz = s.z + bz * Math.cos(this.pitch) * d * f;
-      const py = 1.35 + Math.sin(this.pitch) * d * f;
+      const px = s.x + bx * Math.cos(pitch) * d * f;
+      const pz = s.z + bz * Math.cos(pitch) * d * f;
+      const py = 1.35 + Math.sin(pitch) * d * f;
       if (this.blocked(px, py, pz)) {
         free = Math.max(this.minDistance * 0.6, d * (f - 1 / steps));
         break;
@@ -229,9 +241,9 @@ export class CameraRig {
 
     const dd = Math.min(d, this.occludedDistance);
     this.desired.set(
-      s.x + bx * Math.cos(this.pitch) * dd,
-      1.35 + Math.sin(this.pitch) * dd,
-      s.z + bz * Math.cos(this.pitch) * dd,
+      s.x + bx * Math.cos(pitch) * dd,
+      1.35 + Math.sin(pitch) * dd,
+      s.z + bz * Math.cos(pitch) * dd,
     );
   }
 
