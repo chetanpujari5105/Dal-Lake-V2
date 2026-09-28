@@ -56,7 +56,7 @@ The project ships **without** a music file. To add one:
 4. Run `npm run build`. Vite copies `public/` into `dist/` as is.
 
 How it behaves:
-- **Start:** music starts only after **Start journey** is clicked, then fades in over 4 seconds at a low default volume (30% on the slider).
+- **Start:** music starts only after **Start journey** is clicked, then fades in over 4 seconds at a low default volume (40% on the slider). A volume you set is kept for the rest of the browser session and takes precedence over the default; a new session starts at 40%.
 - **Controls:** the note button (or `N`) mutes and unmutes it, and the slider sets its level. Both settings persist for the browser session (`sessionStorage`).
 - **Sound toggle:** the speaker button (or `M`) silences everything, music included.
 - **No file:** if the file is missing or can't be decoded, the music control shows **No music**, and its tooltip and a notice explain why. Everything else keeps working.

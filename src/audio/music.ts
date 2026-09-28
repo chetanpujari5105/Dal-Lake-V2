@@ -16,7 +16,7 @@ const XFADE = 3; // seconds of overlap at each loop
 const VOL_KEY = 'dal-lake:music-volume';
 const MUTE_KEY = 'dal-lake:music-muted';
 /** Quiet by default: the music sits under the lake's ambience. */
-export const DEFAULT_MUSIC_VOLUME = 0.3;
+export const DEFAULT_MUSIC_VOLUME = 0.4;
 
 function readSession(key: string): string | null {
   try {
